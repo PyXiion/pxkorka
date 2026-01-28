@@ -11,7 +11,7 @@ namespace korka {
 
     std::array<typename decltype(data_functor())::value_type, size> out;
     auto in = data_functor();
-    for (int i = 0; i < size; ++i) {
+    for (std::size_t i = 0; i < size; ++i) {
       out[i] = in[i];
     }
     return out;

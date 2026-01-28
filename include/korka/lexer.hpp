@@ -126,10 +126,13 @@ namespace korka {
           break;
         case '+':
           add_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
+          break;
         case '-':
           add_token(match('=') ? lex_kind::kMinusEqual : lex_kind::kMinus);
+          break;
         case '*':
           add_token(match('=') ? lex_kind::kStarEqual : lex_kind::kStar);
+          break;
         case '/':
           if (match('/')) {
             // Comment until the end of line
@@ -181,7 +184,7 @@ namespace korka {
       // Eat closing "
       advance();
 
-      auto value = m_source.substr(start + 1, current - start - 1);
+      auto value = m_source.substr(start + 1, current - start - 2);
       add_token(lex_kind::kStringLiteral, value);
     }
 
@@ -207,7 +210,7 @@ namespace korka {
       while (is_alphanum(peek())) advance();
 
       std::string_view text = m_source.substr(start, current - start);
-      auto type_it = keywords.find(frozen::string {text});
+      auto type_it = keywords.find(frozen::string{text});
       lex_kind type = lex_kind::kIdentifier;
       if (type_it != keywords.end()) {
         type = type_it->second;
@@ -268,7 +271,7 @@ namespace korka {
     static constexpr auto to_double(std::string_view sv) -> double {
       double r{};
       double factor = 1.0;
-      bool decimal;
+      bool decimal{};
 
       for (auto &&c: sv) {
         if (c == '.') {
@@ -295,14 +298,30 @@ namespace korka {
 } // korka
 
 
-template <>
+constexpr auto operator ==(const korka::lex_token &l, const korka::lex_token &r) -> bool {
+  return l.kind == r.kind
+  and l.lexeme == r.lexeme
+  and l.value == r.value
+  and l.line == r.line;
+}
+
+template<>
 struct std::formatter<korka::lex_token, char> {
-  constexpr auto parse(std::format_parse_context& ctx) {
+  constexpr auto parse(std::format_parse_context &ctx) {
     return ctx.begin();
   }
 
   template<class FmtContext>
-  auto format(const korka::lex_token& obj, FmtContext& ctx) const {
-    return std::format_to(ctx.out(), "{{{}, kind: {}}}", obj.lexeme, static_cast<int>(obj.kind));
+  auto format(const korka::lex_token &obj, FmtContext &ctx) const {
+    auto value = std::visit([](const auto &v) -> std::string {
+      using type = std::remove_reference_t<decltype(v)>;
+      if constexpr (std::convertible_to<type, std::monostate>)
+        return "N/D";
+      else if constexpr (std::is_arithmetic_v<type>)
+        return std::to_string(v);
+      else return std::string{v};
+    }, obj.value);
+    return std::format_to(ctx.out(), "{{{}, kind: {}, value: {}, line: {}}}", obj.lexeme, static_cast<int>(obj.kind),
+                          value, obj.line);
   }
 };
