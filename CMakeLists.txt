@@ -29,6 +29,10 @@ FetchContent_MakeAvailable(Catch2)
 
 add_library(korka_lib
         src/vm/vm_runtime.cpp
+        include/korka/vm/op_codes.hpp
+        include/korka/vm/bytecode_builder.hpp
+        include/korka/vm/options.hpp
+        include/korka/utils/byte_writer.hpp
 )
 
 target_include_directories(korka_lib
@@ -51,6 +55,7 @@ if (ENABLE_TESTS)
 
     add_executable(pxkorka_tests
             test/lexer.cpp
+            test/bytecode_builder.cpp
     )
 
     target_link_libraries(pxkorka_tests
