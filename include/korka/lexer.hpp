@@ -72,7 +72,10 @@ namespace korka {
     constexpr auto lex() -> std::vector<lex_token> {
       while (not is_at_end()) {
         start = current;
-        scan_token();
+        auto token = scan_token();
+        if (token) {
+          tokens.emplace_back(*token);
+        }
       }
 
       tokens.emplace_back(lex_kind::kEof, "", std::monostate{}, line);
@@ -106,39 +109,31 @@ namespace korka {
       return current >= m_source.length();
     }
 
-    constexpr auto scan_token() -> void {
+    constexpr auto scan_token() -> std::optional<lex_token> {
       char c = advance();
       switch (c) {
         case '{':
-          add_token(lex_kind::kOpenBrace);
-          break;
+          return make_token(lex_kind::kOpenBrace);
         case '}':
-          add_token(lex_kind::kCloseBrace);
-          break;
+          return make_token(lex_kind::kCloseBrace);
         case '(':
-          add_token(lex_kind::kOpenParenthesis);
-          break;
+          return make_token(lex_kind::kOpenParenthesis);
         case ')':
-          add_token(lex_kind::kCloseParenthesis);
-          break;
+          return make_token(lex_kind::kCloseParenthesis);
         case ';':
-          add_token(lex_kind::kSemicolon);
-          break;
+          return make_token(lex_kind::kSemicolon);
         case '+':
-          add_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
-          break;
+          return make_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
         case '-':
-          add_token(match('=') ? lex_kind::kMinusEqual : lex_kind::kMinus);
-          break;
+          return make_token(match('=') ? lex_kind::kMinusEqual : lex_kind::kMinus);
         case '*':
-          add_token(match('=') ? lex_kind::kStarEqual : lex_kind::kStar);
-          break;
+          return make_token(match('=') ? lex_kind::kStarEqual : lex_kind::kStar);
         case '/':
           if (match('/')) {
             // Comment until the end of line
             while (peek() != '\n' and not is_at_end()) advance();
           } else {
-            add_token(match('=') ? lex_kind::kSlashEqual : lex_kind::kSlash);
+            return make_token(match('=') ? lex_kind::kSlashEqual : lex_kind::kSlash);
           }
           break;
 
@@ -153,24 +148,22 @@ namespace korka {
           break;
 
         case '"':
-          scan_string();
+          return scan_string();
           break;
 
         default:
           if (is_digit(c)) {
-            scan_number();
+            return scan_number();
           } else if (is_alpha(c)) {
-            scan_identifier();
+            return scan_identifier();
           } else {
-            // Unexpected character
+            return std::nullopt;
           }
-          break;
       }
-
-
+      return std::nullopt;
     }
 
-    constexpr auto scan_string() -> void {
+    constexpr auto scan_string() -> std::optional<lex_token> {
       while (peek() != '"' and not is_at_end()) {
         if (peek() == '\n') line += 1;
         advance();
@@ -178,17 +171,17 @@ namespace korka {
 
       if (is_at_end()) {
         // Error, unterminated string
-        return;
+        return std::nullopt;
       }
 
       // Eat closing "
       advance();
 
       auto value = m_source.substr(start + 1, current - start - 2);
-      add_token(lex_kind::kStringLiteral, value);
+      return make_token(lex_kind::kStringLiteral, value);
     }
 
-    constexpr auto scan_number() -> void {
+    constexpr auto scan_number() -> lex_token {
       while (is_digit(peek())) advance();
 
       bool fp = false;
@@ -200,13 +193,13 @@ namespace korka {
 
       auto value = m_source.substr(start, current - start);
       if (fp) {
-        add_token(lex_kind::kNumberLiteral, to_double(value));
+        return make_token(lex_kind::kNumberLiteral, to_double(value));
       } else {
-        add_token(lex_kind::kNumberLiteral, to_integer(value));
+        return make_token(lex_kind::kNumberLiteral, to_integer(value));
       }
     }
 
-    constexpr auto scan_identifier() -> void {
+    constexpr auto scan_identifier() -> lex_token {
       while (is_alphanum(peek())) advance();
 
       std::string_view text = m_source.substr(start, current - start);
@@ -216,7 +209,7 @@ namespace korka {
         type = type_it->second;
       }
 
-      add_token(type);
+      return make_token(type);
     }
 
     constexpr auto advance() -> char {
@@ -241,9 +234,18 @@ namespace korka {
       return m_source.at(current + 1);
     }
 
-    constexpr auto add_token(lex_kind kind, lex_value &&value = {}) -> void {
-      tokens.emplace_back(kind, m_source.substr(start, current - start), std::move(value), line);
+    constexpr auto make_token(lex_kind kind, lex_value &&value = {}) -> lex_token {
+      return {kind, m_source.substr(start, current - start), std::move(value), line};
     }
+
+    constexpr auto stream() {
+      class lex_stream {
+        lexer m_lexer;
+
+      public:
+      };
+    }
+
 
     static constexpr auto is_digit(char c) -> bool {
       return c >= '0' and c <= '9';
