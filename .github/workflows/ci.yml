@@ -2,9 +2,9 @@ name: CMake Multi-Platform CI
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "master", "develop" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
   workflow_dispatch:
 
 jobs:
@@ -18,17 +18,23 @@ jobs:
         build_type: [ Release, Debug ]
         include:
           - os: ubuntu-24.04
-            c_compiler: gcc-13
-            cpp_compiler: g++-13
+            c_compiler: gcc-14
+            cpp_compiler: g++-14
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
-          - os: macos-latest
-            c_compiler: clang
-            cpp_compiler: clang
+#          - os: macos-latest
+#            c_compiler: clang
+#            cpp_compiler: clang
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install GCC 14
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14
 
       - name: Set reusable strings
         id: strings
