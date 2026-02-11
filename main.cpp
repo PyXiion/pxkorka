@@ -1,6 +1,7 @@
 #include "include/korka/lexer.hpp"
 #include <ranges>
 #include <print>
+#include <format>
 
 constexpr char code[] = R"(
 int main() {
