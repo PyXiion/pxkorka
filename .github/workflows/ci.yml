@@ -5,6 +5,7 @@ on:
     branches: [ "main", "develop" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,8 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
-        build_type: [Release, Debug]
+        os: [ ubuntu-24.04, windows-latest, macos-latest ]
+        build_type: [ Release, Debug ]
         include:
           - os: ubuntu-24.04
             c_compiler: gcc-13
