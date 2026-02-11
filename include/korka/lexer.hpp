@@ -55,9 +55,9 @@ namespace korka {
       : kind(lex_kind::kEof), lexeme(), value(std::monostate{}),
         line(0) {}
 
-    constexpr lex_token(lex_kind kind, const std::string_view &lexeme, lex_value value, size_t line)
-      : kind(kind), lexeme(lexeme), value(value),
-        line(line) {}
+    constexpr lex_token(lex_kind kind_, const std::string_view &lexeme_, lex_value value_, size_t line_)
+      : kind(kind_), lexeme(lexeme_), value(value_),
+        line(line_) {}
 
     lex_kind kind;
     std::string_view lexeme{};
