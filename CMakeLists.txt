@@ -33,7 +33,8 @@ add_library(korka_lib
         include/korka/vm/bytecode_builder.hpp
         include/korka/vm/options.hpp
         include/korka/utils/byte_writer.hpp
-        include/korka/parser.hpp
+        include/korka/compiler/parser.hpp
+        include/korka/shared.hpp
 )
 
 target_include_directories(korka_lib
