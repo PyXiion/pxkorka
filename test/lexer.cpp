@@ -1,4 +1,4 @@
-#include "korka/lexer.hpp"
+#include "korka/compiler/lexer.hpp"
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
