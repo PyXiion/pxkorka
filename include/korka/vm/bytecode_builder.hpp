@@ -105,9 +105,9 @@ namespace korka::vm {
     std::vector<pending_jump> m_jumps;
     std::vector<std::pair<label, int>> m_label_pos;
 
-    constexpr auto get_label_pos(const label &label) -> std::optional<int> {
+    constexpr auto get_label_pos(const label &label_) -> std::optional<int> {
       for (auto &&[l, i]: m_label_pos) {
-        if (l.id == label.id)
+        if (l.id == label_.id)
           return i;
       }
       return std::nullopt;
@@ -118,12 +118,12 @@ namespace korka::vm {
     }
 
     constexpr auto
-    record_jump(op_code op, const label &label, std::optional<reg_id_t> condition = std::nullopt) -> void {
+    record_jump(op_code op, const label &label_, std::optional<reg_id_t> condition = std::nullopt) -> void {
       auto index = emit_op(op);
       m_data.write_many(std::int64_t{});
       if (condition)
         m_data.write_many(*condition);
-      m_jumps.emplace_back(index, label);
+      m_jumps.emplace_back(index, label_);
     }
   };
 
