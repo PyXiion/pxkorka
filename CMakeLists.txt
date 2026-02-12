@@ -28,7 +28,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 add_library(korka_lib
-        src/vm/vm_runtime.cpp
+        include/korka/vm/vm_runtime.hpp src/vm/vm_runtime.cpp
         include/korka/vm/op_codes.hpp
         include/korka/vm/bytecode_builder.hpp
         include/korka/vm/options.hpp
