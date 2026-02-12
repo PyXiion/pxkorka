@@ -8,6 +8,7 @@
 #include <variant>
 #include "frozen/unordered_map.h"
 #include "frozen/string.h"
+#include "korka/shared.hpp"
 #include "korka/utils/utils.hpp"
 #include "korka/utils/string.hpp"
 
@@ -45,10 +46,10 @@ namespace korka {
     kNumberLiteral,    // [0-9]+
 
     kEof,
-};
+  };
   // @formatter:on
 
-  using lex_value = std::variant<std::monostate, std::string_view, std::int64_t, double>;
+  using lex_value = literal_value_t;
 
   struct lex_token {
     constexpr lex_token()
@@ -236,14 +237,6 @@ namespace korka {
 
     constexpr auto make_token(lex_kind kind, lex_value &&value = {}) -> lex_token {
       return {kind, m_source.substr(start, current - start), std::move(value), line};
-    }
-
-    constexpr auto stream() {
-      class lex_stream {
-        lexer m_lexer;
-
-      public:
-      };
     }
 
 
