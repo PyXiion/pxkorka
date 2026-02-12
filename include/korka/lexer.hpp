@@ -298,21 +298,17 @@ namespace korka {
 } // korka
 
 
-constexpr auto operator ==(const korka::lex_token &l, const korka::lex_token &r) -> bool {
+constexpr auto operator==(const korka::lex_token &l, const korka::lex_token &r) -> bool {
   return l.kind == r.kind
-  and l.lexeme == r.lexeme
-  and l.value == r.value
-  and l.line == r.line;
+         and l.lexeme == r.lexeme
+         and l.value == r.value
+         and l.line == r.line;
 }
 
-template<class T>
-struct std::formatter<korka::lex_token, T> {
-  constexpr auto parse(std::format_parse_context &ctx) const {
-    return ctx.begin();
-  }
-
+template<>
+struct std::formatter<korka::lex_token> : std::formatter<std::string_view> {
   template<class FmtContext>
-  auto format(const korka::lex_token &obj, FmtContext &ctx) const {
+  auto format(const korka::lex_token &obj, FmtContext &ctx) const -> FmtContext::iterator {
     auto value = std::visit([](const auto &v) -> std::string {
       using type = std::remove_reference_t<decltype(v)>;
       if constexpr (std::convertible_to<type, std::monostate>)
