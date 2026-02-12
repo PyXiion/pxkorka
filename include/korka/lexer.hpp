@@ -307,7 +307,7 @@ constexpr auto operator ==(const korka::lex_token &l, const korka::lex_token &r)
 
 template<>
 struct std::formatter<korka::lex_token, char> {
-  constexpr auto parse(std::format_parse_context &ctx) {
+  constexpr auto parse(std::format_parse_context &ctx) const {
     return ctx.begin();
   }
 
