@@ -12,9 +12,8 @@ int main() {
 }
 )";
 constexpr auto tokens = korka::lex<code>();
+constexpr auto ast = korka::parse_tokens<tokens>();
 
 int main() {
-  auto parser = korka::parser{tokens};
-  auto ast = parser.parse();
   std::println("{}", korka::ast_walker{ast.first, ast.second, 0});
 }
