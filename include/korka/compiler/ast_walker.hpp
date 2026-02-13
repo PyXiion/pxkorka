@@ -41,8 +41,15 @@ struct std::formatter<korka::ast_walker> {
 
     using namespace korka;
     std::visit(overloaded{
-      [&](const parser::expr_literal&) {
-        out = std::format_to(out, "Literal(?)");
+      [&](const parser::expr_literal& lit) {
+        std::visit(overloaded{
+          [&](std::monostate) {
+            out = std::format_to(out, "null");
+          },
+          [&](auto &&v) {
+            out = std::format_to(out, "{}", v);
+          }
+        }, lit);
       },
       [&](const parser::expr_var& v) {
         out = std::format_to(out, "Var '{}'", v.name);

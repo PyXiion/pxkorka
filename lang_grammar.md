@@ -32,9 +32,9 @@ expression              ::= assignment ;
 assignment              ::= identifier "=" assignment 
                           | logical_or ;
 
-logical_or              ::= logical_and { "||" logical_and } ;
+logical_or              ::= logical_and { "or" logical_and } ;
 
-logical_and             ::= equality { "&&" equality } ;
+logical_and             ::= equality { "and" equality } ;
 
 equality                ::= relational { ("==" | "!=") relational } ;
 

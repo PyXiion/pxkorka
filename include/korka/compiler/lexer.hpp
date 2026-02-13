@@ -20,6 +20,7 @@ namespace korka {
     kOpenParenthesis,   // (
     kCloseParenthesis,  // )
     kSemicolon,         // ;
+    kComma,             // ,
 
     kBang,    kBangEqual,     // !, !=
     kEqual,   kEqualEqual,    // =, ==
@@ -29,6 +30,7 @@ namespace korka {
     kPlus,    kPlusEqual,     // +, +=
     kMinus,   kMinusEqual,    // -, -=
     kSlash,   kSlashEqual,    // /, /=
+    kPercent, kPercentEqual,  // %, %=
     kStar,    kStarEqual,     // *, *=
 
 
@@ -123,12 +125,18 @@ namespace korka {
           return make_token(lex_kind::kCloseParenthesis);
         case ';':
           return make_token(lex_kind::kSemicolon);
+        case ',':
+          return make_token(lex_kind::kComma);
         case '+':
           return make_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
         case '-':
           return make_token(match('=') ? lex_kind::kMinusEqual : lex_kind::kMinus);
         case '*':
           return make_token(match('=') ? lex_kind::kStarEqual : lex_kind::kStar);
+        case '%':
+          return make_token(match('=') ? lex_kind::kPercentEqual : lex_kind::kPercent);
+        case '=':
+          return make_token(match('=') ? lex_kind::kEqual : lex_kind::kEqualEqual);
         case '/':
           if (match('/')) {
             // Comment until the end of line
@@ -150,7 +158,6 @@ namespace korka {
 
         case '"':
           return scan_string();
-          break;
 
         default:
           if (is_digit(c)) {

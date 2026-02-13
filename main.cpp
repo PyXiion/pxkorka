@@ -7,13 +7,13 @@
 constexpr char code[] = R"(
 int main() {
   int a;
-  int b;
-  int c;
+  a = 5 + 5 * (2 + 2);
 }
 )";
 constexpr auto tokens = korka::lex<code>();
 
 int main() {
-  auto ast = korka::parse_tokens<tokens>();
-  std::print("{}", korka::ast_walker{ast.first, ast.second, 0});
+  auto parser = korka::parser{tokens};
+  auto ast = parser.parse();
+  std::println("{}", korka::ast_walker{ast.first, ast.second, 0});
 }
