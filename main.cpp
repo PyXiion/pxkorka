@@ -1,26 +1,19 @@
 #include "korka/compiler/lexer.hpp"
 #include "korka/compiler/parser.hpp"
+#include "korka/compiler/ast_walker.hpp"
 #include <print>
 
 
-//constexpr char code[] = R"(
-//int main() {
-//  puts("Hello world!");
-//}
-//)";
 constexpr char code[] = R"(
-int main() {}
+int main() {
+  int a;
+  int b;
+  int c;
+}
 )";
 constexpr auto tokens = korka::lex<code>();
 
-
-
 int main() {
-//  for (auto &&tk: tokens) {
-//    std::println("{}", tk);
-//  }
-
   auto ast = korka::parse_tokens<tokens>();
-
-  std::print("{}", ast.first);
+  std::print("{}", korka::ast_walker{ast.first, ast.second, 0});
 }

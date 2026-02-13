@@ -35,6 +35,7 @@ add_library(korka_lib
         include/korka/utils/byte_writer.hpp
         include/korka/compiler/parser.hpp
         include/korka/shared.hpp
+        include/korka/compiler/ast_walker.hpp
 )
 
 target_include_directories(korka_lib

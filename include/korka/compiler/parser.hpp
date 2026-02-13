@@ -138,7 +138,7 @@ namespace korka {
         m_pool.append_list(head, decl);
       }
 
-      return std::make_pair(std::move(m_pool.nodes), decl);
+      return std::make_pair(std::move(m_pool.nodes), head);
     }
 
   private:
@@ -200,6 +200,35 @@ namespace korka {
       return token->lexeme;
     }
 
+    constexpr auto parse_id() -> std::optional<std::string_view> {
+      auto token = peek();
+
+      if (token->kind != lex_kind::kIdentifier) {
+        return std::nullopt;
+      }
+      advance();
+
+      return token->lexeme;
+    }
+
+    constexpr auto parse_declaration_in_block() -> index_t {
+      auto type = parse_type_specifier();
+      if (not type) {
+        return empty_node;
+      }
+
+      auto name = parse_id();
+      if (not name) {
+        return empty_node;
+      }
+
+      if (not match(lex_kind::kSemicolon)) {
+        return empty_node;
+      }
+
+      return m_pool.add(decl_var{*type, *name, empty_node});
+    }
+
     constexpr auto parse_statement() -> index_t {
       if (not peek())
         return empty_node;
@@ -214,8 +243,15 @@ namespace korka {
     constexpr auto parse_compound_stmt() -> index_t {
       if (not match(lex_kind::kOpenBrace)) return empty_node;
 
+      auto var_decl = parse_declaration_in_block();
+      auto head = var_decl;
+
+      var_decl = parse_declaration_in_block();
+      for (; var_decl != empty_node; var_decl = parse_declaration_in_block()) {
+        m_pool.append_list(head, var_decl);
+      }
+
       auto stmt = parse_statement();
-      auto head = stmt;
 
       stmt = parse_statement();
       for (; stmt != empty_node; stmt = parse_statement()) {
@@ -228,6 +264,15 @@ namespace korka {
       }
 
       return m_pool.add(stmt_block{head});
+    }
+
+    constexpr auto parse_expression_stmt() -> index_t {
+
+      return m_pool.add(stmt_expr{});
+    }
+
+    constexpr auto parse_expression() -> index_t {
+      return empty_node;
     }
 
     constexpr auto is_at_end() const -> bool {
@@ -271,15 +316,3 @@ namespace korka {
     return parse_tokens<lexer{code}.lex()>();
   }
 }
-
-template<>
-struct std::formatter<korka::parser::node> : std::formatter<std::string_view> {
-  template<class FmtContext>
-  auto format(const korka::parser::node &obj, FmtContext &ctx) const -> FmtContext::iterator {
-    auto type_name = std::visit([](auto &&v) {
-      return typeid(v).name();
-    }, obj.data);
-
-    return std::format_to(ctx.out(), "{}", type_name);
-  }
-};
