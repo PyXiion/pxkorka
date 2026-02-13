@@ -211,7 +211,8 @@ namespace korka {
       return token->lexeme;
     }
 
-    constexpr auto parse_declaration_in_block() -> index_t {
+    constexpr auto try_parse_declaration_in_block() -> index_t {
+      // To rollback in case we fail
       auto start = m_current;
 
       auto type = parse_type_specifier();
@@ -283,16 +284,18 @@ namespace korka {
     constexpr auto parse_compound_stmt() -> index_t {
       if (not match(lex_kind::kOpenBrace)) return empty_node;
 
-      auto var_decl = parse_declaration_in_block();
-      auto head = var_decl;
+      auto get_decl_or_stmt = [&] {
+        auto node_idx = try_parse_declaration_in_block();
+        if (node_idx == empty_node) {
+          node_idx = parse_statement();
+        }
+        return node_idx;
+      };
 
-      var_decl = parse_declaration_in_block();
-      for (; var_decl != empty_node; var_decl = parse_declaration_in_block()) {
-        m_pool.append_list(head, var_decl);
-      }
+      auto head = get_decl_or_stmt();
 
-      for (auto stmt = parse_statement(); stmt != empty_node; stmt = parse_statement()) {
-        m_pool.append_list(head, stmt);
+      for (auto idx = get_decl_or_stmt(); idx != empty_node; idx = get_decl_or_stmt()) {
+        m_pool.append_list(head, idx);
       }
 
       if (not match(lex_kind::kCloseBrace)) {

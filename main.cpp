@@ -8,6 +8,7 @@ constexpr char code[] = R"(
 int main() {
   int a;
   a = 5 + 5 * (2 + 2);
+  int b;
 }
 )";
 constexpr auto tokens = korka::lex<code>();

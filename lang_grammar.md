@@ -16,7 +16,7 @@ statement               ::= compound_stmt
                           | while_stmt 
                           | return_stmt ;
 
-compound_stmt           ::= "{" { declaration_in_block } { statement } "}" ;
+compound_stmt           ::= "{" { declaration_in_block | statement } "}" ;
 declaration_in_block    ::= type_specifier init_declarator_list ";" ;
 
 expression_stmt         ::= [ expression ] ";" ;
