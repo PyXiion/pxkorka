@@ -23,23 +23,9 @@ endif ()
 include(cmake/CPM.cmake)
 
 if (ENABLE_TESTS)
-    CPMAddPackage(
-            NAME catch2
-            URI "gh:catchorg/Catch2@3.13.0"
-            DOWNLOAD_ONLY YES
-    )
-    if (catch2_ADDED)
-        add_library(Catch2WithMain STATIC
-                ${catch2_SOURCE_DIR}/extras/catch_amalgamated.hpp
-                ${catch2_SOURCE_DIR}/extras/catch_amalgamated.cpp
-        )
-        target_include_directories(Catch2WithMain PUBLIC
-            $<BUILD_INTERFACE:${catch2_SOURCE_DIR}/extras>
-        )
-        # Include catch_discover_tests
-        list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
-        include(Catch)
-    endif ()
+    CPMAddPackage("gh:catchorg/Catch2@3.13.0")
+    list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+    include(Catch)
 
 endif ()
 
