@@ -1,5 +1,6 @@
 #include "korka/compiler/lexer.hpp"
-#include <catch_amalgamated.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.cpp>
 
 TEST_CASE("lex_token: Equality operator", "[lexer][unit]") {
   using namespace korka;

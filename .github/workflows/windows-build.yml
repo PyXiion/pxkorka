@@ -1,4 +1,4 @@
-name: Windows Build
+name: Windows Build (Clang)
 
 on:
   push:
@@ -19,8 +19,11 @@ jobs:
       - name: Configure & Build
         run: |
           cmake -B build `
+            -DCMAKE_C_COMPILER=clang-cl `
+            -DCMAKE_CXX_COMPILER=clang-cl `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DENABLE_TESTS=ON
+          
           cmake --build build --config ${{ matrix.build_type }}
 
       - name: Test
