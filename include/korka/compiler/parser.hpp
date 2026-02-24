@@ -66,6 +66,11 @@ namespace korka {
     constexpr explicit parser(std::span<const lex_token> tokens) : m_tokens(tokens) {};
 
     constexpr auto parse() -> std::expected<std::pair<std::vector<node>, index_t>, error_t> {
+      if (auto tok = peek(); tok and tok->kind == lex_kind::kEof) {
+        index_t root = m_pool.add(decl_program{empty_node});
+        return std::make_pair(std::move(m_pool.nodes), root);
+      }
+      
       auto head = parse_external_declaration();
       if (!head) return std::unexpected{head.error()};
 
@@ -80,7 +85,8 @@ namespace korka {
         m_pool.append_list(*head, *decl);
       }
 
-      return std::make_pair(std::move(m_pool.nodes), *head);
+      index_t root = m_pool.add(decl_program{*head});
+      return std::make_pair(std::move(m_pool.nodes), root);
     }
 
   private:
@@ -264,6 +270,7 @@ namespace korka {
       while (true) {
         auto tok = peek();
         if (!tok || tok->kind == lex_kind::kCloseBrace) break;
+        if (tok->kind == lex_kind::kEof) return make_error("Expected '}'");
 
         // Try declaration first
         auto node_res = try_parse_declaration_in_block();
