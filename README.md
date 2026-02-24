@@ -19,8 +19,8 @@ program even starts.
 |:----------------:|:-------:|:-----------------:|
 |      Lexer       |  Done   |     constexpr     |
 | Bytecode builder |  Done   |     constexpr     |
-|      Parser      |   WIP   |     constexpr     |
-|     Compiler     | Planned |     constexpr     |
+|      Parser      |  Done   |     constexpr     |
+|     Compiler     |   WIP   |     constexpr     |
 |    VM runner     | Planned |      runtime      |
 
 
