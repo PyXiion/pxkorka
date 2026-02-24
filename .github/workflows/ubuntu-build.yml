@@ -2,7 +2,7 @@ name: Linux Build
 
 on:
   push:
-    branches: [ "master", "develop" ]
+    branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
 
@@ -52,4 +52,4 @@ jobs:
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
