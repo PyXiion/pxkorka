@@ -1,8 +1,7 @@
 //
 // Created by pyxiion on 14.02.2026.
 //
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
+#include <catch_amalgamated.hpp>
 #include "korka/compiler/parser.hpp"
 
 using namespace korka;

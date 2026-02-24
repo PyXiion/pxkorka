@@ -293,10 +293,6 @@ namespace korka {
       return m_pool.add(stmt_expr{*expr});
     }
 
-    // --- Expression methods (parse_assignment, parse_logical_or, etc.) ---
-    // These methods were mostly correct in your version, ensuring they return parse_result.
-    // Ensure all binary ops check 'if (!right) return std::unexpected{right.error()};'
-
     constexpr auto parse_expression() -> parse_result { return parse_assignment(); }
 
     constexpr auto parse_assignment() -> parse_result {

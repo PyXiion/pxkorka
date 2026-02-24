@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include <catch_amalgamated.hpp>
 #include "korka/vm/bytecode_builder.hpp"
 #include "korka/utils/byte_writer.hpp"
 #include "korka/vm/op_codes.hpp"

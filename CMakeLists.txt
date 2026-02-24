@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# --- OPTIONS ---
+option(ENABLE_TESTS "Build tests" ON)
+
 # Enable all warnings
 if (MSVC)
     add_compile_options(/W4 /WX /permissive-)
@@ -17,15 +20,28 @@ else ()
 endif ()
 
 # Dependencies
-include(FetchContent)
+include(cmake/CPM.cmake)
 
-FetchContent_Declare(
-        Catch2
-        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG v3.8.1
-        SYSTEM
-)
-FetchContent_MakeAvailable(Catch2)
+if (ENABLE_TESTS)
+    CPMAddPackage(
+            NAME catch2
+            URI "gh:catchorg/Catch2@3.13.0"
+            DOWNLOAD_ONLY YES
+    )
+    if (catch2_ADDED)
+        add_library(Catch2WithMain STATIC
+                ${catch2_SOURCE_DIR}/extras/catch_amalgamated.hpp
+                ${catch2_SOURCE_DIR}/extras/catch_amalgamated.cpp
+        )
+        target_include_directories(Catch2WithMain PUBLIC
+            $<BUILD_INTERFACE:${catch2_SOURCE_DIR}/extras>
+        )
+        # Include catch_discover_tests
+        list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+        include(Catch)
+    endif ()
+
+endif ()
 
 add_library(korka_lib
         include/korka/vm/vm_runtime.hpp src/vm/vm_runtime.cpp
@@ -55,8 +71,6 @@ add_executable(pxkorka main.cpp)
 target_link_libraries(pxkorka PRIVATE korka_lib)
 
 # --- TESTS ---
-option(ENABLE_TESTS "Build tests" ON)
-
 if (ENABLE_TESTS)
     enable_testing()
 
@@ -69,9 +83,8 @@ if (ENABLE_TESTS)
     target_link_libraries(pxkorka_tests
             PRIVATE
             korka_lib
-            Catch2::Catch2WithMain
+            Catch2WithMain
     )
 
-    include(Catch)
     catch_discover_tests(pxkorka_tests)
 endif ()
