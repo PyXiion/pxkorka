@@ -39,6 +39,7 @@ add_library(korka_lib
         include/korka/compiler/error.hpp
         include/korka/compiler/lex_token.hpp
         include/korka/utils/const_format.hpp
+        include/korka/compiler/compiler.hpp
 )
 
 target_include_directories(korka_lib

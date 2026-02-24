@@ -62,11 +62,12 @@ TEST_CASE("Basic lexing", "[lexer]") {
 
   };
 
-  REQUIRE(tokens.size() == expected_tokens.size());
+  REQUIRE(tokens.has_value());
+  REQUIRE(tokens->size() == expected_tokens.size());
 
-  for (std::size_t i = 0; i < tokens.size(); ++i) {
-    INFO("Checking token at index " << i << std::format(" : {} against {}", tokens[i], expected_tokens[i]));
-    CHECK(tokens[i] == expected_tokens[i]);
+  for (std::size_t i = 0; i < tokens->size(); ++i) {
+    INFO("Checking token at index " << i << std::format(" : {} against {}", tokens->at(i), expected_tokens[i]));
+    CHECK(tokens->at(i) == expected_tokens[i]);
   }
 }
 
@@ -75,13 +76,15 @@ TEST_CASE("Numbers", "[lexer]") {
 
   SECTION("Integers") {
     auto tokens = lex("123 0 456");
-    REQUIRE(tokens.size() == 4); // 3 numbers + EOF
-    CHECK(std::get<std::int64_t>(tokens[0].value) == 123);
+    REQUIRE(tokens.has_value());
+    REQUIRE(tokens->size() == 4); // 3 numbers + EOF
+    CHECK(std::get<std::int64_t>((*tokens)[0].value) == 123);
   }
 
   SECTION("Floating point") {
     auto tokens = lex("3.14");
-    CHECK(tokens[0].kind == korka::lex_kind::kNumberLiteral);
-    CHECK(std::get<double>(tokens[0].value) == Catch::Approx(3.14));
+    REQUIRE(tokens.has_value());
+    CHECK((*tokens)[0].kind == korka::lex_kind::kNumberLiteral);
+    CHECK(std::get<double>((*tokens)[0].value) == Catch::Approx(3.14));
   }
 }

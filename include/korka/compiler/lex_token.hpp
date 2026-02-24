@@ -1,5 +1,6 @@
 #pragma once
 #include <string_view>
+#include "korka/shared.hpp"
 
 namespace korka {
   // @formatter:off
@@ -47,7 +48,7 @@ namespace korka {
       : kind(lex_kind::kEof), lexeme(), value(std::monostate{}),
         line(0) {}
 
-    constexpr lex_token(lex_kind kind_, const std::string_view &lexeme_, lex_value value_, size_t line_, size_t char_pos_)
+    constexpr lex_token(lex_kind kind_, const std::string_view &lexeme_, lex_value value_, size_t line_, size_t char_pos_ = 0)
       : kind(kind_), lexeme(lexeme_), value(value_),
         line(line_), char_pos(char_pos_) {}
 
