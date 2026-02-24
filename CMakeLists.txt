@@ -25,7 +25,7 @@ include(cmake/CPM.cmake)
 if (ENABLE_TESTS)
     CPMAddPackage("gh:catchorg/Catch2@3.13.0")
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
-
+    include(Catch)
 endif ()
 
 add_library(korka_lib
