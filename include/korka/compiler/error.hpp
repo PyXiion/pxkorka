@@ -26,7 +26,7 @@ namespace korka {
     };
 
     constexpr auto report(const other_lexer_error &err) -> std::string {
-      return korka::format("Lexer Error: ~ at ~:~", err.message, err.ctx.line);
+      return korka::format("Lexer Error: ~ at line ~", err.message, err.ctx.line);
     }
 
 
