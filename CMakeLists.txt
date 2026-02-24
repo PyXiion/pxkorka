@@ -63,6 +63,7 @@ if (ENABLE_TESTS)
     add_executable(pxkorka_tests
             test/lexer.cpp
             test/bytecode_builder.cpp
+            test/parser.cpp
     )
 
     target_link_libraries(pxkorka_tests
