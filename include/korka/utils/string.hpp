@@ -19,8 +19,6 @@ namespace korka {
 
     char value[N]{};
     const std::size_t length = N;
-
-
   };
 
   template<typename T>

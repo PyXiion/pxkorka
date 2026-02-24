@@ -5,7 +5,7 @@ project(pxkorka
 )
 
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -33,7 +33,13 @@ add_library(korka_lib
         include/korka/vm/bytecode_builder.hpp
         include/korka/vm/options.hpp
         include/korka/utils/byte_writer.hpp
-        include/korka/parser.hpp
+        include/korka/compiler/parser.hpp
+        include/korka/shared.hpp
+        include/korka/compiler/ast_walker.hpp
+        include/korka/compiler/error.hpp
+        include/korka/compiler/lex_token.hpp
+        include/korka/utils/const_format.hpp
+        include/korka/compiler/compiler.hpp
 )
 
 target_include_directories(korka_lib
@@ -57,6 +63,7 @@ if (ENABLE_TESTS)
     add_executable(pxkorka_tests
             test/lexer.cpp
             test/bytecode_builder.cpp
+            test/parser.cpp
     )
 
     target_link_libraries(pxkorka_tests

@@ -6,79 +6,37 @@
 #include <unordered_map>
 #include <vector>
 #include <variant>
+#include <expected>
 #include "frozen/unordered_map.h"
 #include "frozen/string.h"
-#include "korka/utils/utils.hpp"
 #include "korka/utils/string.hpp"
+#include "lex_token.hpp"
+#include "korka/shared.hpp"
+#include "korka/utils/utils.hpp"
+#include "error.hpp"
 
 namespace korka {
-  // @formatter:off
-  enum struct lex_kind {
-    kOpenBrace,         // {
-    kCloseBrace,        // }
-    kOpenParenthesis,   // (
-    kCloseParenthesis,  // )
-    kSemicolon,         // ;
-
-    kBang,    kBangEqual,     // !, !=
-    kEqual,   kEqualEqual,    // =, ==
-    kLess,    kLessEqual,     // <, <=
-    kGreater, kGreaterEqual,  // >, >=
-
-    kPlus,    kPlusEqual,     // +, +=
-    kMinus,   kMinusEqual,    // -, -=
-    kSlash,   kSlashEqual,    // /, /=
-    kStar,    kStarEqual,     // *, *=
-
-
-    kInt,               // int
-
-    kReturn,            // return
-    kAnd, kOr,          // and, or
-    kIf, kElse,         // if, else
-    kTrue, kFalse,      // true, false
-    kFor, kWhile,       // for, while
-
-
-    kIdentifier,        // [a-zA-Z]\w*
-    kStringLiteral,     // "[^"]+"
-    kNumberLiteral,    // [0-9]+
-
-    kEof,
-};
-  // @formatter:on
-
-  using lex_value = std::variant<std::monostate, std::string_view, std::int64_t, double>;
-
-  struct lex_token {
-    constexpr lex_token()
-      : kind(lex_kind::kEof), lexeme(), value(std::monostate{}),
-        line(0) {}
-
-    constexpr lex_token(lex_kind kind_, const std::string_view &lexeme_, lex_value value_, size_t line_)
-      : kind(kind_), lexeme(lexeme_), value(value_),
-        line(line_) {}
-
-    lex_kind kind;
-    std::string_view lexeme{};
-    lex_value value{};
-    std::size_t line{};
-  };
-
   class lexer {
   public:
     explicit constexpr lexer(std::string_view source) : m_source(source) {}
 
-    constexpr auto lex() -> std::vector<lex_token> {
+    constexpr auto lex() -> std::expected<std::vector<lex_token>, error_t> {
+      tokens.clear();
+
       while (not is_at_end()) {
         start = current;
         auto token = scan_token();
-        if (token) {
-          tokens.emplace_back(*token);
+
+        if (not token) continue;
+
+        if (token->has_value()) {
+          tokens.emplace_back(**token);
+        } else {
+          return std::unexpected{token->error()};
         }
       }
 
-      tokens.emplace_back(lex_kind::kEof, "", std::monostate{}, line);
+      tokens.emplace_back(lex_kind::kEof, "", std::monostate{}, line, 0);
 
       return tokens;
     }
@@ -104,12 +62,13 @@ namespace korka {
     std::size_t start{};
     std::size_t current{};
     std::size_t line = 1;
+    std::size_t in_line_pos = 0;
 
     constexpr auto is_at_end() -> bool {
       return current >= m_source.length();
     }
 
-    constexpr auto scan_token() -> std::optional<lex_token> {
+    constexpr auto scan_token() -> std::optional<std::expected<lex_token, error_t>> {
       char c = advance();
       switch (c) {
         case '{':
@@ -122,12 +81,22 @@ namespace korka {
           return make_token(lex_kind::kCloseParenthesis);
         case ';':
           return make_token(lex_kind::kSemicolon);
+        case ',':
+          return make_token(lex_kind::kComma);
         case '+':
           return make_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
         case '-':
           return make_token(match('=') ? lex_kind::kMinusEqual : lex_kind::kMinus);
         case '*':
           return make_token(match('=') ? lex_kind::kStarEqual : lex_kind::kStar);
+        case '%':
+          return make_token(match('=') ? lex_kind::kPercentEqual : lex_kind::kPercent);
+        case '=':
+          return make_token(match('=') ? lex_kind::kEqualEqual : lex_kind::kEqual);
+        case '<':
+          return make_token(match('=') ? lex_kind::kLessEqual : lex_kind::kLess);
+        case '>':
+          return make_token(match('=') ? lex_kind::kGreaterEqual : lex_kind::kGreater);
         case '/':
           if (match('/')) {
             // Comment until the end of line
@@ -141,29 +110,34 @@ namespace korka {
         case '\r':
         case '\t':
           // Ignore whitespace
-          break;
+          return std::nullopt;
 
         case '\n':
-          line += 1;
-          break;
+          next_line();
+          return std::nullopt;
 
         case '"':
           return scan_string();
-          break;
 
         default:
           if (is_digit(c)) {
             return scan_number();
           } else if (is_alpha(c)) {
             return scan_identifier();
-          } else {
-            return std::nullopt;
           }
       }
-      return std::nullopt;
+
+      return std::unexpected{
+        error::unexpected_character{
+          .ctx = {
+            .line = line
+          },
+          .c = c
+        }
+      };
     }
 
-    constexpr auto scan_string() -> std::optional<lex_token> {
+    constexpr auto scan_string() -> std::expected<lex_token, error_t> {
       while (peek() != '"' and not is_at_end()) {
         if (peek() == '\n') line += 1;
         advance();
@@ -171,7 +145,14 @@ namespace korka {
 
       if (is_at_end()) {
         // Error, unterminated string
-        return std::nullopt;
+        return std::unexpected{
+          error::other_lexer_error{
+            .ctx = {
+              .line = line
+            },
+            .message = "Unterminated string",
+          }
+        };
       }
 
       // Eat closing "
@@ -213,6 +194,7 @@ namespace korka {
     }
 
     constexpr auto advance() -> char {
+      in_line_pos += 1;
       return m_source.at(current++);
     }
 
@@ -235,17 +217,13 @@ namespace korka {
     }
 
     constexpr auto make_token(lex_kind kind, lex_value &&value = {}) -> lex_token {
-      return {kind, m_source.substr(start, current - start), std::move(value), line};
+      return {kind, m_source.substr(start, current - start), std::move(value), line, in_line_pos};
     }
 
-    constexpr auto stream() {
-      class lex_stream {
-        lexer m_lexer;
-
-      public:
-      };
+    constexpr auto next_line() -> void {
+      line += 1;
+      in_line_pos = 0;
     }
-
 
     static constexpr auto is_digit(char c) -> bool {
       return c >= '0' and c <= '9';
@@ -293,9 +271,19 @@ namespace korka {
 
   template<const_string str>
   consteval auto lex() {
-    constexpr static auto expr = []constexpr { return lexer{static_cast<std::string_view>(str)}.lex(); };
+    constexpr static auto expr = [] constexpr {
+      return lexer{static_cast<std::string_view>(str)}.lex();
+    };
 
-    return to_array<expr>();
+    if constexpr (expr()) {
+      constexpr static auto expr_getter = [] constexpr {
+        return expr().value();
+      };
+      return to_array<expr_getter>();
+    } else {
+      report_error<[] { return expr().error(); }>();
+      return expr().error();
+    }
   }
 } // korka
 
