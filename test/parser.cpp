@@ -1,4 +1,5 @@
-#include <catch_amalgamated.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include "korka/compiler/lexer.hpp"
 #include "korka/compiler/parser.hpp"
 #include <string>
@@ -12,7 +13,7 @@ auto StrContains(const std::string &str) {
   return Catch::Matchers::StringContainsMatcher({str, Catch::CaseSensitive::No});
 };
 
-static auto parse_code(std::string_view code) -> std::pair<std::vector<parser::node>, parser::index_t> {
+static auto parse_code(std::string_view code) -> std::pair<std::vector<korka::nodes::node>, korka::nodes::index_t> {
   auto tokens = lexer{code}.lex();
   REQUIRE(tokens);
   parser p(tokens.value());

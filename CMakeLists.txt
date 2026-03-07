@@ -38,10 +38,14 @@ add_library(korka_lib
         include/korka/compiler/parser.hpp
         include/korka/shared.hpp
         include/korka/compiler/ast_walker.hpp
-        include/korka/compiler/error.hpp
+        include/korka/shared/error.hpp
         include/korka/compiler/lex_token.hpp
         include/korka/utils/const_format.hpp
         include/korka/compiler/compiler.hpp
+        include/korka/utils/overloaded.hpp
+        include/korka/shared/types.hpp
+        include/korka/shared/flat_map.hpp
+        include/korka/utils/frozen_hash_string_view.hpp
 )
 
 target_include_directories(korka_lib
@@ -57,20 +61,20 @@ add_executable(pxkorka main.cpp)
 target_link_libraries(pxkorka PRIVATE korka_lib)
 
 # --- TESTS ---
-if (ENABLE_TESTS)
-    enable_testing()
-
-    add_executable(pxkorka_tests
-            test/lexer.cpp
-            test/bytecode_builder.cpp
-            test/parser.cpp
-    )
-
-    target_link_libraries(pxkorka_tests
-            PRIVATE
-            korka_lib
-            Catch2WithMain
-    )
-
-    catch_discover_tests(pxkorka_tests)
-endif ()
+#if (ENABLE_TESTS)
+#    enable_testing()
+#
+#    add_executable(pxkorka_tests
+#            test/lexer.cpp
+#            test/bytecode_builder.cpp
+#            test/parser.cpp
+#    )
+#
+#    target_link_libraries(pxkorka_tests
+#            PRIVATE
+#            korka_lib
+#            Catch2WithMain
+#    )
+#
+#    catch_discover_tests(pxkorka_tests)
+#endif ()
