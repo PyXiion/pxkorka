@@ -27,7 +27,7 @@ auto foo_func = compile_result.function<"foo">();
 static_assert(std::is_same_v<decltype(foo_func), long (*)(long, long)>);
 
 int main() {
-  std::println("{::X}", compile_result.bytes | std::views::transform([](auto b) { return static_cast<int>(b); }));
+  std::println("{:n:02X}", compile_result.bytes | std::views::transform([](auto b) { return static_cast<int>(b); }));
 
 //  auto lexed = korka::lexer{code}.lex();
 //  if (not lexed) {

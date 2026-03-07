@@ -12,7 +12,6 @@
 #include <vector>
 #include <optional>
 #include <string_view>
-#include <flat_map>
 
 namespace korka {
   struct void_t {
@@ -485,7 +484,7 @@ struct unique_type{};
     };
 
     if constexpr (not expected()) {
-      report_error<expected>();
+      report_error<[]{return expected.error();}>();
     } else {
       return compilation_result_to_const<[] constexpr { return expected().value(); }>();
     }
