@@ -84,6 +84,14 @@ namespace korka {
     constexpr auto report(const other_compiler_error &err) -> std::string {
       return korka::format("Compiler Error: ~", err.message);
     }
+
+    struct other_error {
+      std::string_view message;
+    };
+
+    constexpr auto report(const other_error &err) -> std::string {
+      return korka::format("Error: ~", err.message);
+    }
   }
 
   using error_t = std::variant<
@@ -93,7 +101,8 @@ namespace korka {
     error::redeclaration,
     error::undefined_symbol,
     error::unknown_type,
-    error::other_compiler_error>;
+    error::other_compiler_error,
+    error::other_error>;
 
   constexpr auto to_string(const error_t &err) -> std::string {
     return std::visit([](const auto &e) {

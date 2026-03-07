@@ -45,6 +45,7 @@ add_library(korka_lib
         include/korka/utils/overloaded.hpp
         include/korka/shared/types.hpp
         include/korka/shared/flat_map.hpp
+        include/korka/utils/frozen_hash_string_view.hpp
 )
 
 target_include_directories(korka_lib

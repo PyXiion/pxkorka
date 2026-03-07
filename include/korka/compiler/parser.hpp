@@ -48,23 +48,22 @@ namespace korka {
       index_t current;
       std::span<const node> nodes;
 
-      auto operator*() const -> index_t { return current; }
-      auto operator++() -> index_iterator& {
+      constexpr auto operator*() const -> index_t { return current; }
+      constexpr auto operator++() -> index_iterator& {
         current = nodes[current].next;
         return *this;
       }
-      auto operator++(int) -> index_iterator {
+      constexpr auto operator++(int) -> index_iterator {
         auto self = *this;
         current = nodes[current].next;
         return self;
       }
-      auto operator==(std::default_sentinel_t) const -> bool {
+      constexpr auto operator==(std::default_sentinel_t) const -> bool {
         return current == empty_node;
       }
     };
 
-    auto get_list_view(std::span<const node> nodes, index_t head) {
-
+    constexpr auto get_list_view(std::span<const node> nodes, index_t head) {
       return std::ranges::subrange(
         index_iterator{head, nodes},
         std::default_sentinel
@@ -525,25 +524,18 @@ namespace korka {
     }
   };
 
-  template<auto &&tokens>
+  template<auto &tokens>
   constexpr auto parse_tokens() {
-    constexpr static auto p = []constexpr{
+    constexpr static auto expected = []constexpr{
       return parser{std::span{tokens}}.parse();
     };
 
-    constexpr static auto pp = [] constexpr {
-      if constexpr (p()) {
-        return std::make_pair(to_array<[]{return p()->first;}>(), p()->second);
-      } else {
-        constexpr static auto get_error = [] constexpr {
-          return p().error();
-        };
-        report_error<get_error>();
-        return p().error();
-      }
-    };
-
-    return pp();
+    if constexpr(not expected()) {
+      report_error<[] {return expected().error();}>();
+      return expected().error();
+    } else {
+      return std::make_pair(to_array<[]{return expected()->first;}>(), expected()->second);
+    }
   }
 
   template<const_string code>

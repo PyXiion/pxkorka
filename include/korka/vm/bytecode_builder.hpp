@@ -43,6 +43,16 @@ namespace korka::vm {
       return m_last_op_pos = m_data.write<op_code_size>(static_cast<int>(code));
     }
 
+    constexpr auto emit_load_local(local_index_t index) {
+      emit_op(op_code::lload);
+      m_data.write_many(index);
+    }
+
+    constexpr auto emit_save_local(local_index_t index) {
+      emit_op(op_code::lsave);
+      m_data.write_many(index);
+    }
+
     template<korka::type Type>
     constexpr auto emit_const(const type_to_cpp_t<Type> &value) {
       emit_op(get_const_op_by_type<Type>());
@@ -50,9 +60,12 @@ namespace korka::vm {
     }
 
     // --- JUMPS ---
-//    constexpr auto emit_jmp(const label &target) {
-//      record_jump(op_code::jmp, target);
-//    }
+    constexpr auto emit_jmp(const label &target) {
+      record_jump(op_code::jmp, target);
+    }
+    constexpr auto emit_jmp_if_zero(const label &target) {
+      record_jump(op_code::jmpz, target);
+    }
 //
 //    constexpr auto emit_jmp_if(const label &target, reg_id_t cond) {
 //      record_jump(op_code::jmp_if, target, cond);
@@ -66,9 +79,10 @@ namespace korka::vm {
           std::abort();
         }
         int target_pc = *label_pos;
-        std::int64_t offset = target_pc - j.instr_index;
+        jump_offset offset = target_pc - j.instr_index;
+
         std::ranges::copy(
-          std::as_bytes(std::span{&offset, 1}),
+          std::bit_cast<std::array<std::byte, sizeof(offset)>>(offset),
           std::begin(data) + j.instr_index + op_code_size);
       }
 
@@ -77,7 +91,7 @@ namespace korka::vm {
 
   private:
     struct pending_jump {
-      int instr_index;
+      jump_offset instr_index;
       label target;
     };
 
@@ -90,11 +104,9 @@ namespace korka::vm {
     std::vector<std::pair<label, int>> m_label_pos;
 
     constexpr auto
-    record_jump(op_code op, const label &label_, std::optional<reg_id_t> condition = std::nullopt) -> void {
+    record_jump(op_code op, const label &label_) -> void {
       auto index = emit_op(op);
-      m_data.write_many(std::int64_t{});
-      if (condition)
-        m_data.write_many(*condition);
+      m_data.write_many(jump_offset{});
       m_jumps.emplace_back(index, label_);
     }
   };
