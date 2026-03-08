@@ -148,8 +148,8 @@ namespace korka {
     }
 
     constexpr auto lookup_variable(std::string_view name) -> std::optional<variable_info> {
-      for (auto &scope: std::ranges::reverse_view(scopes)) {
-        if (auto var_it = scope.variables.find(name); var_it != std::end(scope.variables)) {
+      for (auto &scp: std::ranges::reverse_view(scopes)) {
+        if (auto var_it = scp.variables.find(name); var_it != std::end(scp.variables)) {
           return var_it->second;
         }
       }
