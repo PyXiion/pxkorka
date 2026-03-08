@@ -121,7 +121,8 @@ namespace korka {
 
   template<auto err_getter>
   consteval auto report_error() -> void {
-    #if __cpp_static_assert >= 202306L
+    // Idk, __cpp_static_assert check is not enough for clang
+    #if __cplusplus >= 202400L && __cpp_static_assert >= 202306L
     static_assert(false, to_string(err_getter()));
     #else
     constexpr auto msg = const_string_from_string_view<[]{return to_string(err_getter());}>();
