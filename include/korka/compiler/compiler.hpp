@@ -478,7 +478,7 @@ struct unique_type{};
   };
 
   template<auto &&nodes, nodes::index_t root>
-  constexpr static auto compile_nodes() {
+  consteval static auto compile_nodes() {
     constexpr static auto expected = [] constexpr {
       return compiler{nodes, root}.compile();
     };

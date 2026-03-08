@@ -6,8 +6,6 @@
 
 namespace korka {
 
-  class vm_runtime {
 
-  };
 
 } // korka

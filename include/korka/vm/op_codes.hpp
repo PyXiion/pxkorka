@@ -10,11 +10,15 @@ namespace korka::vm {
   enum class op_code {
     // --- Memory & Stack ---
     // Loads a value from tje local at index on stack
-    // <op><index:1>
+    // <op><local_index_t>
     lload,
 
+    // Load parameters from stack into locals
+    // <op><count:1>
+    pload,
+
     // Pops a value from stack and saves to the local at index
-    // <op><index:1>
+    // <op><local_index_t>
     lsave,
 
     // Pushes a value onto the stack

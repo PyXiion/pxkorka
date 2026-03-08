@@ -271,7 +271,7 @@ namespace korka {
 
   template<const_string str>
   consteval auto lex() {
-    constexpr static auto expected = [] constexpr {
+    constexpr static auto expected = [] consteval {
       return lexer{static_cast<std::string_view>(str)}.lex();
     };
 

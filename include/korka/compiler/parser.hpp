@@ -525,7 +525,7 @@ namespace korka {
   };
 
   template<auto &tokens>
-  constexpr auto parse_tokens() {
+  consteval auto parse_tokens() {
     constexpr static auto expected = []constexpr{
       return parser{std::span{tokens}}.parse();
     };
@@ -539,7 +539,7 @@ namespace korka {
   }
 
   template<const_string code>
-  constexpr auto parse() {
+  consteval auto parse() {
     constexpr static auto tokens = lex<code>();
     return parse_tokens<tokens>();
   }
