@@ -8,10 +8,10 @@
 #include <cstdint>
 #include <string_view>
 #include <vector>
+#include <ranges>
 
 namespace korka {
-  class parser {
-  public:
+  namespace nodes {
     using index_t = int32_t;
     constexpr static index_t empty_node = -1;
 
@@ -39,6 +39,47 @@ namespace korka {
       data_t data;
       index_t next = empty_node;
     };
+
+
+    struct index_iterator {
+      using value_type = index_t;
+      using difference_type = std::ptrdiff_t;
+
+      index_t current;
+      std::span<const node> nodes;
+
+      constexpr auto operator*() const -> index_t { return current; }
+      constexpr auto operator++() -> index_iterator& {
+        current = nodes[current].next;
+        return *this;
+      }
+      constexpr auto operator++(int) -> index_iterator {
+        auto self = *this;
+        current = nodes[current].next;
+        return self;
+      }
+      constexpr auto operator==(std::default_sentinel_t) const -> bool {
+        return current == empty_node;
+      }
+    };
+
+    constexpr auto get_list_view(std::span<const node> nodes, index_t head) {
+      return std::ranges::subrange(
+        index_iterator{head, nodes},
+        std::default_sentinel
+      );
+    }
+  }
+  using namespace korka::nodes;
+
+  template<class T>
+  concept parser_mixin = requires (T &mixin) {
+    { mixin.on_function(std::declval<decl_function>()) };
+  };
+
+  template<parser_mixin ...mixins>
+  class parser {
+  public:
 
     struct ast_pool {
       std::vector<node> nodes{};
@@ -483,29 +524,22 @@ namespace korka {
     }
   };
 
-  template<auto &&tokens>
-  constexpr auto parse_tokens() {
-    constexpr static auto p = []constexpr{
+  template<auto &tokens>
+  consteval auto parse_tokens() {
+    constexpr static auto expected = []constexpr{
       return parser{std::span{tokens}}.parse();
     };
 
-    constexpr static auto pp = [] constexpr {
-      if constexpr (p()) {
-        return std::make_pair(to_array<[]{return p()->first;}>(), p()->second);
-      } else {
-        constexpr static auto get_error = [] constexpr {
-          return p().error();
-        };
-        report_error<get_error>();
-        return p().error();
-      }
-    };
-
-    return pp();
+    if constexpr(not expected()) {
+      report_error<[] {return expected().error();}>();
+      return expected().error();
+    } else {
+      return std::make_pair(to_array<[]{return expected()->first;}>(), expected()->second);
+    }
   }
 
   template<const_string code>
-  constexpr auto parse() {
+  consteval auto parse() {
     constexpr static auto tokens = lex<code>();
     return parse_tokens<tokens>();
   }

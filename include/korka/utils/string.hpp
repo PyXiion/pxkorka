@@ -9,6 +9,8 @@ namespace korka {
   struct const_string {
     constexpr const_string() = default;
 
+    constexpr const_string(const const_string &) = default;
+
     constexpr const_string(const char (&str)[N]) {
       std::copy_n(str, N, value);
     }
@@ -19,7 +21,15 @@ namespace korka {
 
     char value[N]{};
     const std::size_t length = N;
+
   };
+
+  template<auto sv_getter>
+  constexpr auto const_string_from_string_view() {
+    const_string<sv_getter().length> str;
+    std::copy_n(sv_getter().data(), str.length, str.value);
+    return str;
+  }
 
   template<typename T>
   concept StringLiteral = requires(std::decay_t<T> t) {

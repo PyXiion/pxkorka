@@ -13,7 +13,7 @@
 #include "lex_token.hpp"
 #include "korka/shared.hpp"
 #include "korka/utils/utils.hpp"
-#include "error.hpp"
+#include "korka/shared/error.hpp"
 
 namespace korka {
   class lexer {
@@ -271,18 +271,15 @@ namespace korka {
 
   template<const_string str>
   consteval auto lex() {
-    constexpr static auto expr = [] constexpr {
+    constexpr static auto expected = [] consteval {
       return lexer{static_cast<std::string_view>(str)}.lex();
     };
 
-    if constexpr (expr()) {
-      constexpr static auto expr_getter = [] constexpr {
-        return expr().value();
-      };
-      return to_array<expr_getter>();
+    if constexpr (expected()) {
+      return to_array<[]{return expected().value();}>();
     } else {
-      report_error<[] { return expr().error(); }>();
-      return expr().error();
+      report_error<expected().error()>();
+      return expected().error();
     }
   }
 } // korka

@@ -16,8 +16,8 @@ jobs:
         build_type: [Release, Debug]
         include:
           - compiler: gcc
-            cc: gcc-14
-            cxx: g++-14
+            cc: gcc-15
+            cxx: g++-15
           - compiler: clang
             cc: clang-21
             cxx: clang++-21
@@ -25,11 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GCC 14
+      - name: Install GCC 15
         if: matrix.compiler == 'gcc'
         run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
           sudo apt-get update
-          sudo apt-get install -y g++-14
+          sudo apt-get install -y ${{ matrix.cc }} ${{ matrix.cxx }}
 
       - name: Install Clang 21
         if: matrix.compiler == 'clang'
@@ -39,7 +40,7 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
-          sudo apt-get install -y clang-21
+          sudo apt-get install -y ${{ matrix.cc }}
 
       - name: Configure & Build
         run: |
