@@ -28,8 +28,9 @@ jobs:
       - name: Install GCC 15
         if: matrix.compiler == 'gcc'
         run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
           sudo apt-get update
-          sudo apt-get install -y ${{ matrix.cc }}
+          sudo apt-get install -y ${{ matrix.cc }} ${{ matrix.cxx }}
 
       - name: Install Clang 21
         if: matrix.compiler == 'clang'
