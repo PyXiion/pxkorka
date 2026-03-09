@@ -1,13 +1,14 @@
 #include "korka/compiler/parser.hpp"
 #include "korka/compiler/compiler.hpp"
 #include "korka/compiler/ast_walker.hpp"
+#include "korka/vm/vm_runtime.hpp"
 #include <print>
 
 constexpr char code[] = R"(
 int main() {
   int a = 2;
   if (a) {
-    return a;
+    return a * 5;
   } else {
     return 5 + a;
   }
@@ -20,13 +21,15 @@ int foo(int a, int b) {
 
 constexpr auto compile_result = korka::compile<code>();
 
-auto main_func = compile_result.function<"main">();
-static_assert(std::is_same_v<decltype(main_func), long (*)()>);
-
-auto foo_func = compile_result.function<"foo">();
-static_assert(std::is_same_v<decltype(foo_func), long (*)(long, long)>);
 
 int main() {
+  korka::vm::context ctx{compile_result.bytes};
+
+  auto main_func = compile_result.function<"main">();
+  auto foo_func = compile_result.function<"foo">();
+
+  std::println("{} {}", ctx.run(main_func), ctx.run(foo_func, 3L, 42L));
+
 //  std::ignore = tokens;
 //  std::println("{:n:02X}", compile_result.bytes | std::views::transform([](auto b) { return static_cast<int>(b); }));
 

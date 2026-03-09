@@ -26,7 +26,7 @@ namespace korka {
 
   template<auto sv_getter>
   constexpr auto const_string_from_string_view() {
-    const_string<sv_getter().length()> str;
+    const_string<sv_getter().length() + 1> str;
     std::copy_n(sv_getter().data(), str.length, str.value);
     return str;
   }
