@@ -1,13 +1,18 @@
 #pragma once
 
+#include <variant>
+#include <string_view>
+#include <expected>
 #include <cstdint>
+#include "korka/shared/error.hpp"
 #include "korka/shared/types.hpp"
+#include "korka/utils/overloaded.hpp"
 
 namespace korka::vm {
   using local_index_t = std::uint8_t;
   using jump_offset = std::int32_t;
 
-  enum class op_code {
+  enum class op_code : char {
     // --- Memory & Stack ---
     // Loads a value from tje local at index on stack
     // <op><local_index_t>

@@ -1,9 +1,15 @@
 #pragma once
 
+#include <concepts>
 #include <variant>
 #include "korka/compiler/lex_token.hpp"
 #include "korka/utils/const_format.hpp"
+#include "korka/utils/string.hpp"
 #include <optional>
+
+#if __cplusplus >= 202400L && __cpp_static_assert >= 202306L
+#define KORKA_FEATURE_FORMATTED_STATIC_ASSERT
+#endif
 
 namespace korka {
   namespace error {
@@ -121,12 +127,29 @@ namespace korka {
 
   template<auto err_getter>
   consteval auto report_error() -> void {
-    // Idk, __cpp_static_assert check is not enough for clang
-    #if __cplusplus >= 202400L && __cpp_static_assert >= 202306L
-    static_assert(false, to_string(err_getter()));
-    #else
-    constexpr auto msg = const_string_from_string_view<[]{return to_string(err_getter());}>();
-    std::ignore = ErrorMessage<msg>{};
-    #endif
+    if constexpr (std::convertible_to<decltype(err_getter()), error_t>) {
+      #ifdef KORKA_FEATURE_FORMATTED_STATIC_ASSERT
+      static_assert(false, to_string(err_getter()));
+      #else
+      constexpr auto msg = const_string_from_string_view<[]{return to_string(err_getter());}>();
+      std::ignore = ErrorMessage<msg>{};
+      #endif
+    } else {
+      #ifdef KORKA_FEATURE_FORMATTED_STATIC_ASSERT
+      static_assert(false, err_getter());
+      #else
+      constexpr auto msg = const_string_from_string_view<err_getter>();
+      std::ignore = ErrorMessage<msg>{};
+      #endif
+    }
+  }
+
+  template<bool ok, auto err_getter>
+  consteval auto format_static_assert() -> void {
+    if constexpr (ok) {
+      // yay
+    } else {
+      report_error<err_getter>();
+    }
   }
 }

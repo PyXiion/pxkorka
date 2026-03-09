@@ -1,6 +1,6 @@
 #pragma once
 
-#include "frozen/bits/elsa.h"
+#include <frozen/bits/elsa.h>
 #include "korka/shared/error.hpp"
 #include "korka/shared/flat_map.hpp"
 #include "korka/utils/overloaded.hpp"
@@ -55,7 +55,7 @@ namespace korka {
     std::vector<variable_info> params;
     type_info return_type;
 
-    vm::bytecode_builder::label label;
+    std::size_t start_pos;
   };
 
   template<std::size_t NMaxParams>
@@ -65,7 +65,7 @@ namespace korka {
     std::array<variable_info, NMaxParams> params;
     type_info return_type;
 
-    vm::bytecode_builder::label label;
+    std::size_t start_pos;
   };
 
   template<auto info_getter>
@@ -76,8 +76,8 @@ namespace korka {
     template<std::size_t... Is>
     struct param_helper<std::index_sequence<Is...>> {
       // Map each parameter info to its corresponding C++ type
-      using type = vm::type_info_to_cpp_t<[]{return info_getter().return_type;}>(
-        vm::type_info_to_cpp_t<[]{return info_getter().params[Is].type;}>...
+      using type = vm::type_info_to_cpp_t<[] { return info_getter().return_type; }>(
+        vm::type_info_to_cpp_t<[] { return info_getter().params[Is].type; }>...
       );
     };
 
@@ -96,7 +96,7 @@ namespace korka {
       .param_count = f.params.size(),
       .params{},
       .return_type = f.return_type,
-      .label{}
+      .start_pos = f.start_pos
     };
 
     std::ranges::copy(f.params, std::begin(info.params));
@@ -175,6 +175,18 @@ namespace korka {
     flat_map<std::string_view, function_info> functions;
   };
 
+
+  struct function_runtime_info {
+    std::size_t start_pos;
+  };
+
+  template<class Signature>
+  struct function_runtime_info_with_signature : public function_runtime_info {
+    using signature_t = Signature;
+
+    using function_runtime_info::start_pos;
+  };
+
   template<std::size_t NBytes, std::size_t NFunctions, std::size_t NMaxParams, class SignatureMapper>
   struct const_compilation_result {
     std::array<std::byte, NBytes> bytes;
@@ -184,34 +196,64 @@ namespace korka {
     using get_signature_t = typename SignatureMapper::template get_signature_t<name>;
 
     template<const_string name>
-    constexpr auto function() const -> get_signature_t<name> * {
-      return nullptr;
+    constexpr auto function() const {
+      return function_runtime_info_with_signature<get_signature_t<name>>{
+        functions.at(name).start_pos
+      };
     }
 
-    SignatureMapper mapper{};
+//    SignatureMapper mapper{};
   };
 
-template<std::size_t>
-struct unique_type{};
+  template<auto>
+  struct unique_type {
+  };
 
   template<auto function_info_getter, typename IndexSequence>
   struct signature_mapper;
 
   template<auto function_info_getter, std::size_t... Is>
   struct signature_mapper<function_info_getter, std::index_sequence<Is...>> {
+    consteval static auto hash(auto &&v) -> std::size_t {
+      return frozen::elsa<std::string_view>{}(v, 0);
+    }
+
+    // That's how we basically map types to strings
+    // Function name -> hash -> unique_type<hash>
+    // And then we create a functor with overloading for different types
+    // Basically it looks like this:
+    //  overloaded{
+    //    [](unique_type<hash("NAME1")>) -> TYPE1* { return nullptr; },
+    //    [](unique_type<hash("NAME2")>) -> TYPE2* { return nullptr; },
+    //    ...
+    //  }
+
+    // I think I could return here some meta info for internal types later, idk
+
     constexpr static auto _overloaded = overloaded{
-      ([](unique_type<frozen::elsa<std::string_view>{}(function_info_getter(Is).name, 0)>)
-        -> const_function_info_to_signature_t<[] {return function_info_getter(Is);}> *
-      {
+      ([](unique_type<hash(function_info_getter(Is).name)>)
+        -> const_function_info_to_signature_t<[] { return function_info_getter(Is); }> * {
         return nullptr;
       })...
     };
 
-    template<const_string name>
-    using get_signature_t = std::remove_pointer_t<decltype(_overloaded(unique_type<frozen::elsa<std::string_view>{}(name, 0)>{}))>;
+    // Retrieve the type
+    template<const_string name> requires ([] -> bool {
+      constexpr bool found = requires {
+        { _overloaded(unique_type<hash(name)>{}) };
+      };
+      if constexpr (not found) {
+        report_error<[] {
+          return format("Symbol '~' not found", name);
+        }>();
+      }
+      return true;
+    }())
+    using get_signature_t = std::remove_pointer_t<decltype(_overloaded(
+      unique_type<hash(name)>{}))>;
 
-    std::tuple<const_function_info_to_signature_t<[] {return function_info_getter(Is);}> *...> debug1;
-    std::tuple<unique_type<frozen::elsa<std::string_view>{}(function_info_getter(Is).name, 0)>...> debug2;
+//    std::tuple<const_function_info_to_signature_t<[] { return function_info_getter(Is); }> *...> debug1;
+//    std::tuple<unique_type<frozen::elsa<std::string_view>{}(function_info_getter(Is).name, 0)>...> debug2;
   };
 
 
@@ -240,7 +282,10 @@ struct unique_type{};
       return frozen::make_unordered_map(functions_data);
     };
 
-    using sign_mapper = signature_mapper<[](std::size_t i) { return (functions().begin() + i)->second; }, std::make_index_sequence<function_count>>;
+    // Function mapper
+    using sign_mapper = signature_mapper<[](std::size_t i) {
+      return (functions().begin() + i)->second;
+    }, std::make_index_sequence<function_count>>;
 
     return const_compilation_result<bytes.size(), function_count, max_params_n, sign_mapper>{
       bytes,
@@ -309,18 +354,22 @@ struct unique_type{};
 
           // Register the function globally BEFORE processing the body
           // This allows the function to "see" itself (recursion)
+
+          builder.bind_label(label);
+          auto func_start_pos = builder.resolve_label(label);
+          if (not func_start_pos) return std::unexpected{error::other_compiler_error{"Idk"}};
+
           auto reg_ok = m_symbols.declare_function(
             function.name,
             parameters,
             ret_type,
-            label
+            *func_start_pos
           );
           if (not reg_ok) return std::unexpected{reg_ok.error()};
 
           // Entering function scope
           m_symbols.push_scope();
           m_current_func_ret = ret_type;
-          builder.bind_label(label);
 
           // Handle parameters as local variables
           for (auto &&param: parameters) {
@@ -484,7 +533,7 @@ struct unique_type{};
     };
 
     if constexpr (not expected()) {
-      report_error<[]{return expected().error();}>();
+      report_error<[] { return expected().error(); }>();
       return expected().error();
     } else {
       return compilation_result_to_const<[] constexpr { return expected().value(); }>();
