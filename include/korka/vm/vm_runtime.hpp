@@ -33,7 +33,6 @@ namespace korka::vm {
 
       // Create a scope for the call
       push_scope();
-      // TODO: check argument types
 
       // Pass arguments
       std::size_t i = 0;
@@ -43,16 +42,7 @@ namespace korka::vm {
 
       m_reader.set_cursor(func.start_pos);
 
-      // Run until ret
-      // Check scopes size to ensure it's the original function's return
-      while (true) {
-        auto op = execute_op();
-
-        if (op == op_code::ret && m_scopes.empty()) {
-          m_scopes.clear();
-          break;
-        }
-      }
+      execute_loop();
 
       using return_type = typename Traits::return_type;
       if constexpr (std::is_void_v<return_type>) {
@@ -65,114 +55,158 @@ namespace korka::vm {
   protected:
     bindings_t m_bindings;
 
-    auto execute_op() -> op_code {
-      auto initial_pc = m_reader.cursor();
+    void execute_loop() {
+      const std::byte *ip = m_reader.data() + m_reader.cursor();
 
-      const auto code = m_reader.read<op_code>();
+      // Using macros instead of lambdas, because
+      // templates with lambdas (like lambda<T>) don't work
+      // well
+#define READ(T)   (*reinterpret_cast<const T*>(ip)); ip += sizeof(T)
+#define IP_POS()  static_cast<std::size_t>(ip - m_reader.data())
 
-      switch (code) {
-        case op_code::lload: {
-          const auto index = m_reader.read<local_index_t>();
-          push_value(current_scope()->get_local_value(index));
-        }
-          break;
-        case op_code::pload:
-          throw std::runtime_error("Not implemented");
-          break;
-        case op_code::lsave: {
-          const auto index = m_reader.read<local_index_t>();
-          current_scope()->set_local_value(index, pop_value());
-        }
-          break;
-        case op_code::i64_const: {
-          const auto v = m_reader.read<std::int64_t>();
-          push(v);
-        }
-          break;
-        case op_code::i64_add: {
-          const auto b = pop<std::int64_t>();
-          const auto a = pop<std::int64_t>();
-          push(a + b);
-        }
-          break;
-        case op_code::i64_sub: {
-          const auto b = pop<std::int64_t>();
-          const auto a = pop<std::int64_t>();
-          push(a - b);
-        }
-          break;
-        case op_code::i64_mul: {
-          const auto b = pop<std::int64_t>();
-          const auto a = pop<std::int64_t>();
-          push(a * b);
-        }
-          break;
-        case op_code::i64_div: {
-          const auto b = pop<std::int64_t>();
-          const auto a = pop<std::int64_t>();
-          push(a / b);
-        }
-          break;
-        case op_code::i64_cmp: {
-          const auto b = pop<std::int64_t>();
-          const auto a = pop<std::int64_t>();
-          push(static_cast<std::int64_t>(a == b));
-        }
-          break;
-        case op_code::jmp: {
-          const auto offset = m_reader.read<jump_offset>();
-          m_reader.set_cursor(initial_pc + offset);
-        }
-          break;
-        case op_code::jmpz: {
-          const auto offset = m_reader.read<jump_offset>();
-          auto v = pop<std::int64_t>();
-          if (v == 0) {
-            m_reader.set_cursor(initial_pc + offset);
-          }
-        }
-          break;
-        case op_code::call: {
-          auto called_address = m_reader.read<address_t>();
-          current_scope()->suspension_point = m_reader.cursor();
-          auto arg_count = pop<type::i64>();
+      // Using dispatch table instead of switch case, because it's
+      // much faster for the CPU
+      // Also instead of calling execute_op every time I do it right here
+      // without extra calls
 
-          push_scope();
+      // Also using C99 extensions, I should get rid of them later.
+      static const void *const dispatch[] = {
+        [int(op_code::lload)]     = &&op_lload,
+        [int(op_code::lsave)]     = &&op_lsave,
+        [int(op_code::i64_const)] = &&op_i64_const,
+        [int(op_code::i64_add)]   = &&op_i64_add,
+        [int(op_code::i64_sub)]   = &&op_i64_sub,
+        [int(op_code::i64_mul)]   = &&op_i64_mul,
+        [int(op_code::i64_div)]   = &&op_i64_div,
+        [int(op_code::i64_cmp)]   = &&op_i64_cmp,
+        [int(op_code::jmp)]       = &&op_jmp,
+        [int(op_code::jmpz)]      = &&op_jmpz,
+        [int(op_code::call)]      = &&op_call,
+        [int(op_code::ret)]       = &&op_ret,
+        [int(op_code::trap)]      = &&op_trap,
+      };
 
-          // Load args
-          for (int i = arg_count - 1; i >= 0; --i) {
-            auto v = pop_value();
-            current_scope()->set_local_value(i, v);
-          }
+      op_start:
+      const std::size_t instr_start = IP_POS();
+      const op_code code = READ(op_code);
 
-          m_reader.set_cursor(called_address);
-        }
-          break;
-        case op_code::ret:
-          pop_scope();
-          if (current_scope()) {
-            m_reader.set_cursor(current_scope()->suspension_point);
-          }
-          break;
-        case op_code::trap: {
-          auto id = m_reader.read<vm_external_function_id>();
-          auto func = m_bindings.get_callable_by_id(id);
-          (*func)(*this);
-        }
-          break;
+      // @formatter:off
+      // clang-format off
+      goto *dispatch[int(code)];
+      // clang-format on
+      // @formatter:on
+
+      op_lload:
+      {
+        const auto index = READ(local_index_t);
+        push_value(current_scope()->get_local_value(index));
+        goto op_start;
       }
 
-      return code;
+      op_lsave:
+      {
+        const auto index = READ(local_index_t);
+        current_scope()->set_local_value(index, pop_value());
+        goto op_start;
+      }
+
+      op_i64_const:
+      {
+        const auto v = READ(std::int64_t);
+        push(v);
+        goto op_start;
+      }
+
+      op_i64_add:
+      {
+        const auto b = pop<std::int64_t>();
+        const auto a = pop<std::int64_t>();
+        push(a + b);
+        goto op_start;
+      }
+      op_i64_sub:
+      {
+        const auto b = pop<std::int64_t>();
+        const auto a = pop<std::int64_t>();
+        push(a - b);
+        goto op_start;
+      }
+      op_i64_mul:
+      {
+        const auto b = pop<std::int64_t>();
+        const auto a = pop<std::int64_t>();
+        push(a * b);
+        goto op_start;
+      }
+      op_i64_div:
+      {
+        const auto b = pop<std::int64_t>();
+        const auto a = pop<std::int64_t>();
+        push(a / b);
+        goto op_start;
+      }
+      op_i64_cmp:
+      {
+        const auto b = pop<std::int64_t>();
+        const auto a = pop<std::int64_t>();
+        push(static_cast<std::int64_t>(a == b));
+        goto op_start;
+      }
+
+      op_jmp:
+      {
+        const auto offset = READ(jump_offset);
+        ip = m_reader.data() + (instr_start + offset);
+        goto op_start;
+      }
+
+      op_jmpz:
+      {
+        const auto offset = READ(jump_offset);
+        const auto v = pop<std::int64_t>();
+        if (__builtin_expect(v == 0, 0)) {
+          ip = m_reader.data() + (instr_start + offset);
+        }
+        goto op_start;
+      }
+
+      op_call:
+      {
+        auto called_address = READ(address_t);
+        current_scope()->suspension_point = IP_POS();
+        auto arg_count = pop<type::i64>();
+
+        push_scope();
+        for (int i = arg_count - 1; i >= 0; --i) {
+          current_scope()->set_local_value(i, pop_value());
+        }
+        ip = m_reader.data() + called_address;
+        goto op_start;
+      }
+
+      op_ret:
+      {
+        pop_scope();
+        if (current_scope()) {
+          ip = m_reader.data() + current_scope()->suspension_point;
+        } else {
+          m_scopes.clear();
+          m_reader.set_cursor(IP_POS());
+          return;
+        }
+        goto op_start;
+      }
+
+      op_trap:
+      {
+        auto id = READ(vm_external_function_id);
+        auto func = m_bindings.get_callable_by_id(id);
+        (*func)(*this);
+        goto op_start;
+      }
     }
+
+#undef READ
+#undef IP_POS
   };
-
-  class runtime {
-  public:
-//    auto create_context() -> context {
-//      return {};
-//    }
-
-
-  };
-
 } // korka::vm

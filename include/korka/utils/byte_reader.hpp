@@ -43,6 +43,10 @@ namespace korka::vm {
       m_cursor = pos;
     }
 
+    auto data() noexcept -> const std::byte * {
+      return m_bytes.data();
+    }
+
   private:
     std::size_t m_cursor;
     const std::span<const std::byte> m_bytes;

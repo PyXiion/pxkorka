@@ -101,10 +101,6 @@ namespace korka {
     }
   };
 
-  class const_bindings {
-
-  };
-
   consteval auto make_bindings(auto ...wrapped_functions) {
     constexpr auto func_max_args = [] {
       std::size_t max{};
