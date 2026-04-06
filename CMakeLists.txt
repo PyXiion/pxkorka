@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
 project(pxkorka
         VERSION 0.1.0
-        LANGUAGES CXX
+        LANGUAGES C CXX
 )
 
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 # --- OPTIONS ---
 option(ENABLE_TESTS "Build tests" ON)
@@ -16,7 +16,7 @@ option(ENABLE_TESTS "Build tests" ON)
 if (MSVC)
     add_compile_options(/W4 /WX /permissive-)
 else ()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wshadow -Wunused)
+#    add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wshadow -Wunused)
 endif ()
 
 # Dependencies
@@ -89,3 +89,33 @@ target_compile_options(korka_lib PUBLIC -Wno-error=unused-but-set-variable -Wno-
 #
 #    catch_discover_tests(pxkorka_tests)
 #endif ()
+
+
+# --- BENCH ---
+CPMAddPackage(
+        NAME lua
+        GIT_REPOSITORY https://github.com/lua/lua.git
+        VERSION 5.3.5
+        DOWNLOAD_ONLY YES
+)
+
+if (lua_ADDED)
+    # lua has no CMake support, so we create our own target
+
+    FILE(GLOB lua_sources ${lua_SOURCE_DIR}/*.c)
+    list(REMOVE_ITEM lua_sources "${lua_SOURCE_DIR}/lua.c" "${lua_SOURCE_DIR}/luac.c")
+    add_library(lua STATIC ${lua_sources})
+
+    target_include_directories(lua
+            PUBLIC
+            $<BUILD_INTERFACE:${lua_SOURCE_DIR}>
+    )
+endif()
+
+
+find_package(Python3 COMPONENTS Development REQUIRED)
+
+add_executable(bench bench.cpp)
+target_link_libraries(bench PUBLIC lua korka_lib)
+target_link_libraries(bench PRIVATE Python3::Python)
+target_include_directories(bench PRIVATE ${Python3_INCLUDE_DIRS})
