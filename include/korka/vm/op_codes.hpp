@@ -19,10 +19,6 @@ namespace korka::vm {
     // <op><local_index_t>
     lload,
 
-    // Load parameters from stack into locals
-    // <op><count:1>
-    pload,
-
     // Pops a value from stack and saves to the local at index
     // <op><local_index_t>
     lsave,
