@@ -1,101 +1,119 @@
 #pragma once
 
-#include "korka/utils/function_traits.hpp"
-#include "korka/vm/op_codes.hpp"
-#include "korka/utils/byte_reader.hpp"
-#include "korka/compiler/result.hpp"
-#include "korka/vm/value.hpp"
-#include "korka/compiler/binding.hpp"
-#include <array>
-#include <bit>
+#include <cstddef>
+#include <memory>
+#include <new>
+#include <span>
+#include <stdexcept>
+#include <utility>
 #include <vector>
-#include <cstdint>
+#include "korka/vm/op_codes.hpp"
+#include "korka/vm/value.hpp"
 
 namespace korka::vm {
+  class context_base;
+
+  // Signature of a C++ function wrapped for the `trap` instruction
+  using external_function_type = void(context_base &context);
+
+  // Allocator that leaves new elements uninitialised: the stack is large, a context should not pay
+  // for touching all of it. Every slot is written before it is read (`enter` zero-fills the locals).
   template<class T>
-  concept bindings_concepts = requires(const T &t) {
-    { t.get_callable_by_id(0) };
-  };
+  struct default_init_allocator : std::allocator<T> {
+    template<class U>
+    struct rebind {
+      using other = default_init_allocator<U>;
+    };
 
-  struct function_scope {
-    // Set on `call`, used on `ret`
-    std::size_t suspension_point{};
+    using std::allocator<T>::allocator;
 
-    std::vector<value> locals{8};
-
-    auto set_local_value(local_index_t i, value const &v) -> void {
-      locals.at(i) = v;
+    template<class U>
+    void construct(U *p) {
+      ::new(static_cast<void *>(p)) U;
     }
 
-    template<class T = value>
-    auto set_local(local_index_t i, T const &value) -> void {
-      set_local_value(i, box<T>(value));
-    }
-
-    auto get_local_value(local_index_t i) -> value {
-      return locals.at(i);
-    }
-
-    template<class T = value>
-    auto get_local(local_index_t i) -> T {
-      return unbox<T>(get_local_value(i));
-    }
-
-
-    auto clear() -> void {
-      locals.clear();
+    template<class U, class... Args>
+    void construct(U *p, Args &&...args) {
+      ::new(static_cast<void *>(p)) U(std::forward<Args>(args)...);
     }
   };
 
+  struct stack_overflow : std::runtime_error {
+    stack_overflow() : std::runtime_error("korka: VM stack overflow") {}
+  };
+
+  /**
+   * Owns the VM state: one contiguous value stack allocated once, the stack pointer,
+   * the base of the current frame, and the frame list.
+   */
   class context_base {
   public:
-    explicit context_base(std::span<const std::byte> bytes)
-      : m_reader(bytes) {
-      m_stack.reserve(64);
+    static constexpr std::size_t default_stack_slots = 65536;
+
+    // `enter` keeps this many slots free above a frame for the operand stack. The depth of the
+    // operand stack inside a single expression is not checked beyond that reserve.
+    static constexpr std::size_t operand_reserve = 1024;
+
+    explicit context_base(std::span<const std::byte> code, std::size_t stack_slots = default_stack_slots)
+      : m_code(code), m_stack(stack_slots) {
+      m_sp = m_base = m_stack.data();
+      m_frames.reserve(256);
     }
 
-    auto push_value(value const &v) -> void {
-      m_stack.emplace_back(v);
+    context_base(const context_base &) = delete;
+
+    auto operator=(const context_base &) -> context_base & = delete;
+
+    context_base(context_base &&) noexcept = default;
+
+    auto operator=(context_base &&) noexcept -> context_base & = default;
+
+    /**
+     * Number of values on the stack. It is back at its starting value after every `call`.
+     */
+    auto stack_depth() const -> std::size_t {
+      return static_cast<std::size_t>(m_sp - m_stack.data());
     }
 
-    template<class T>
-    auto push(T const &v) -> void {
-      push_value(box<T>(v));
+    // --- Access for bound functions ---
+
+    /**
+     * The top `n` slots, first one lowest.
+     */
+    auto top_slots(std::size_t n) const -> const value * {
+      return m_sp - n;
     }
 
-    auto pop_value() -> value {
-      value v = m_stack.back();
-      m_stack.pop_back();
-      return v;
+    auto drop_slots(std::size_t n) -> void {
+      m_sp -= n;
     }
 
-    template<class T>
-    auto pop() -> T {
-      return unbox<T>(pop_value());
-    }
-
-    template<korka::type T>
-    auto pop() -> type_to_cpp_t<T> {
-      return unbox<type_to_cpp_t<T>>(pop_value());
+    /**
+     * Pushes `n` slots, returns the first of them.
+     */
+    auto push_slots(std::size_t n) -> value * {
+      value *first = m_sp;
+      m_sp += n;
+      return first;
     }
 
   protected:
+    struct frame {
+      const std::byte *return_ip; // nullptr: return to the C++ caller of `call`
+      value *caller_base;
+    };
 
-    auto current_scope() -> function_scope * {
-      return m_scopes.empty() ? nullptr : std::addressof(m_scopes.back());
+    // Drops the frames above `frames`, puts the stack pointer and the frame base back
+    auto reset(value *sp, value *base, std::size_t frames) -> void {
+      m_frames.erase(m_frames.begin() + static_cast<std::ptrdiff_t>(frames), m_frames.end());
+      m_sp = sp;
+      m_base = base;
     }
 
-    auto push_scope() -> void {
-      m_scopes.emplace_back();
-    }
-
-    auto pop_scope() -> void {
-      m_scopes.pop_back();
-    }
-
-    std::vector<value> m_stack;
-    std::vector<function_scope> m_scopes;
-
-    byte_reader m_reader;
+    std::span<const std::byte> m_code;
+    std::vector<value, default_init_allocator<value>> m_stack;
+    std::vector<frame> m_frames;
+    value *m_sp{};
+    value *m_base{};
   };
 }

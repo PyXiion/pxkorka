@@ -1,26 +1,25 @@
 #pragma once
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <concepts>
-#include <vector>
-#include <span>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <ranges>
+#include <span>
+#include <vector>
 
 namespace korka {
   class byte_writer {
   public:
     constexpr byte_writer() = default;
 
+    /**
+     * Appends the value in host byte order, returns the position it was written at.
+     */
     constexpr auto write(std::integral auto const &v) -> std::size_t {
       return write(std::bit_cast<std::array<std::byte, sizeof(v)>>(v));
-    }
-
-    template<std::size_t bytes>
-    constexpr auto write(std::int64_t v) -> std::size_t {
-      auto bytes_arr = std::bit_cast<std::array<std::byte, sizeof(v)>>(v);
-      auto cut_bytes = std::array<std::byte, bytes>();
-      for (std::size_t i = 0; i < bytes; ++i)
-        cut_bytes[i] = bytes_arr[i];
-      return write(cut_bytes);
     }
 
     constexpr auto write(std::span<const std::byte> data) -> std::size_t {
@@ -29,8 +28,16 @@ namespace korka {
       return i;
     }
 
-    constexpr auto write_many(auto &&...data) -> void {
-      (write(std::forward<decltype(data)>(data)), ...);
+    /**
+     * Overwrites already written bytes starting at `pos`.
+     */
+    constexpr auto patch(std::size_t pos, std::integral auto const &v) -> void {
+      auto bytes = std::bit_cast<std::array<std::byte, sizeof(v)>>(v);
+      std::ranges::copy(bytes, m_data.begin() + static_cast<std::ptrdiff_t>(pos));
+    }
+
+    constexpr auto size() const -> std::size_t {
+      return m_data.size();
     }
 
     constexpr auto data() -> std::vector<std::byte> & {

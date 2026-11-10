@@ -1,223 +1,184 @@
-//
-// Created by pyxiion on 20/03/2026.
-//
 #pragma once
 
+#include <algorithm>
 #include <array>
-#include "korka/vm/op_codes.hpp"
+#include <cstddef>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#include "korka/compiler/binding.hpp"
 #include "korka/compiler/info.hpp"
+#include "korka/shared/error.hpp"
 #include "korka/shared/flat_map.hpp"
-#include "korka/utils/frozen_hash_string_view.hpp"
+#include "korka/shared/struct_def.hpp"
+#include "korka/utils/string.hpp"
+#include "korka/vm/function_handle.hpp"
 
 namespace korka {
-  template<auto info_getter>
-  struct _extract_function_signature {
-    template<typename IndexSequence>
-    struct param_helper;
-
-    template<std::size_t... Is>
-    struct param_helper<std::index_sequence<Is...>> {
-      // Map each parameter info to its corresponding C++ type
-      using type = vm::type_info_to_cpp_t<[] { return info_getter().return_type; }>(
-        vm::type_info_to_cpp_t<[] { return info_getter().params[Is].type; }>...
-      );
-    };
-
-    using type = typename param_helper<
-      std::make_index_sequence<info_getter().param_count>
-    >::type;
-  };
-
-  template<auto info_getter>
-  using const_function_info_to_signature_t = typename _extract_function_signature<info_getter>::type;
-
   template<std::size_t NMaxParams>
   constexpr auto function_info_to_const(const function_info &f) {
     const_function_info<NMaxParams> info{
       .name = f.name,
-      .param_count = f.params.size(),
-      .params{},
+      .param_count = f.param_types.size(),
+      .param_types{},
       .return_type = f.return_type,
       .start_pos = f.start_pos
     };
 
-    std::ranges::copy(f.params, std::begin(info.params));
+    std::ranges::copy(f.param_types, std::begin(info.param_types));
     return info;
   }
-
-  struct symbol_table {
-    struct scope {
-      flat_map<std::string_view, variable_info> variables;
-
-      std::size_t current_locals_size{};
-    };
-    std::vector<scope> scopes;
-    flat_map<std::string_view, function_info> functions;
-
-    constexpr auto push_scope() -> void { scopes.emplace_back(); }
-
-    constexpr auto pop_scope() -> void { scopes.pop_back(); }
-
-    constexpr auto declare_var(std::string_view name, const type_info &type) -> std::expected<variable_info, error_t> {
-      if (scopes.empty()) {
-        return std::unexpected{error::other_compiler_error{
-          .message = "No scope"
-        }};
-      }
-
-      auto &current = scopes.back();
-      if (current.variables.contains(name)) {
-        return std::unexpected{error::redeclaration{
-          .identifier = name
-        }};
-      }
-
-      variable_info info{
-        .name = name,
-        .type = type,
-        .locals_index = current.current_locals_size++
-      };
-
-      current.variables[name] = info;
-      return info;
-    }
-
-    constexpr auto declare_function(std::string_view name, auto &&...args) -> std::expected<void, error_t> {
-      functions.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(name),
-                        std::forward_as_tuple(name, std::forward<decltype(args)>(args)...));
-      return {};
-    }
-
-    constexpr auto lookup_variable(std::string_view name) -> std::optional<variable_info> {
-      for (auto &scp: std::ranges::reverse_view(scopes)) {
-        if (auto var_it = scp.variables.find(name); var_it != std::end(scp.variables)) {
-          return var_it->second;
-        }
-      }
-      return std::nullopt;
-    }
-
-    constexpr auto lookup_function(std::string_view name) -> std::optional<function_info> {
-      if (auto func_it = functions.find(name); func_it != std::end(functions)) {
-        return func_it->second;
-      }
-      return std::nullopt;
-    }
-
-    constexpr auto clear() -> void {
-      scopes.clear();
-      functions.clear();
-    }
-  };
-
 
   struct compilation_result {
     std::vector<std::byte> bytes;
     flat_map<std::string_view, function_info> functions;
   };
 
+  // The functions of a script. Few and looked up rarely, so a plain scan: building a perfect hash
+  // costs too many constexpr steps.
+  template<std::size_t NFunctions, std::size_t NMaxParams>
+  struct const_function_table {
+    std::array<const_function_info<NMaxParams>, NFunctions> items;
 
-  struct function_runtime_info {
-    std::size_t start_pos;
+    constexpr auto find(std::string_view name) const -> const const_function_info<NMaxParams> * {
+      for (const auto &f: items) {
+        if (f.name == name) return &f;
+      }
+      return nullptr;
+    }
   };
 
-  template<class Signature>
-  struct function_runtime_info_with_signature : public function_runtime_info {
-    using signature_t = Signature;
+  namespace detail {
+    // C++ struct types that scripts can name, by script name
+    template<class Exposed>
+    struct exposed_lookup;
 
-    using function_runtime_info::start_pos;
-  };
+    template<class... Ts>
+    struct exposed_lookup<type_list<Ts...>> {
+      static constexpr std::size_t npos = sizeof...(Ts);
 
-  template<std::size_t NBytes, std::size_t NFunctions, std::size_t NMaxParams, class SignatureMapper>
+      static consteval auto index_of(std::string_view name) -> std::size_t {
+        std::size_t i = 0;
+        std::size_t found = npos;
+        ((found == npos and struct_def<Ts>::name == name ? found = i : 0, ++i), ...);
+        return found;
+      }
+
+      template<std::size_t I>
+      using at = std::tuple_element_t<I, std::tuple<Ts...>>;
+    };
+
+    // The C++ type of a script type. Only reached for functions that are actually exported,
+    // a script-only struct is an error there and nowhere else.
+    template<auto type_getter, class Exposed>
+    consteval auto resolve_cpp_type() {
+      constexpr type_info t = type_getter();
+      if constexpr (t.is_struct()) {
+        using lookup = exposed_lookup<Exposed>;
+        constexpr auto index = lookup::index_of(t.struct_name);
+        if constexpr (index == lookup::npos) {
+          report_error<[] {
+            return korka::format("The signature uses the script-only struct '~', it has no C++ counterpart",
+                                 type_getter().struct_name);
+          }>();
+          return std::type_identity<std::int64_t>{}; // placeholder, the error is already reported
+        } else {
+          return std::type_identity<typename lookup::template at<index>>{};
+        }
+      } else {
+        return std::type_identity<type_to_cpp_t<t.builtin>>{};
+      }
+    }
+
+    template<auto type_getter, class Exposed>
+    using cpp_type_t = typename decltype(resolve_cpp_type<type_getter, Exposed>())::type;
+
+    template<class R, class... Args>
+    using function_type_t = R(Args...);
+
+    template<auto info_getter, class Exposed, class IndexSequence>
+    struct signature_of;
+
+    template<auto info_getter, class Exposed, std::size_t... Is>
+    struct signature_of<info_getter, Exposed, std::index_sequence<Is...>> {
+      using type = function_type_t<
+        cpp_type_t<[] { return info_getter().return_type; }, Exposed>,
+        cpp_type_t<[] { return info_getter().param_types[Is]; }, Exposed>...
+      >;
+    };
+
+    template<auto functions_getter, class Exposed, const_string name>
+    consteval auto resolve_signature() {
+      constexpr bool found = functions_getter().find(std::string_view{name}) != nullptr;
+      if constexpr (not found) {
+        report_error<[] {
+          return korka::format("Function '~' is not defined in the script", std::string_view{name});
+        }>();
+        return std::type_identity<void()>{};
+      } else {
+        constexpr auto info_getter = [] { return *functions_getter().find(std::string_view{name}); };
+        return std::type_identity<typename signature_of<
+          info_getter, Exposed, std::make_index_sequence<info_getter().param_count>
+        >::type>{};
+      }
+    }
+  }
+
+  template<std::size_t NBytes, std::size_t NFunctions, std::size_t NMaxParams,
+    auto functions_getter, class Exposed>
   struct const_compilation_result {
     std::array<std::byte, NBytes> bytes;
-    frozen::unordered_map<std::string_view, const_function_info<NMaxParams>, NFunctions> functions;
+    const_function_table<NFunctions, NMaxParams> functions;
 
+    // C++ signature of a script function. Fails to compile if the function does not exist or
+    // its signature uses a struct that is not bound.
     template<const_string name>
-    using get_signature_t = typename SignatureMapper::template get_signature_t<name>;
+    using get_signature_t = typename decltype(detail::resolve_signature<functions_getter, Exposed, name>())::type;
 
     template<const_string name>
     constexpr auto function() const {
-      return function_runtime_info_with_signature<get_signature_t<name>>{
-        functions.at(name).start_pos
+      return vm::function_handle<get_signature_t<name>>{
+        functions.find(std::string_view{name})->start_pos
       };
     }
   };
 
-  template<auto>
-  struct unique_type {
-  };
-
-  template<auto function_info_getter, typename IndexSequence>
-  struct signature_mapper;
-
-  template<auto function_info_getter, std::size_t... Is>
-  struct signature_mapper<function_info_getter, std::index_sequence<Is...>> {
-    consteval static auto hash(auto &&v) -> std::size_t {
-      return frozen::elsa<std::string_view>{}(v, 0);
-    }
-
-    constexpr static auto _overloaded = overloaded{
-      ([](unique_type<hash(function_info_getter(Is).name)>)
-        -> const_function_info_to_signature_t<[] { return function_info_getter(Is); }> * {
-        return nullptr;
-      })...
-    };
-
-    // Retrieve the type
-    template<const_string name>
-      #ifdef __clang__ // GCC crashes on this check for some reason
-      requires ([] -> bool {
-        constexpr bool found = requires {
-          { _overloaded(unique_type<hash(name)>{}) };
-        };
-        if constexpr (not found) {
-          report_error<[] {
-            return format("Symbol '~' not found", name);
-          }>();
-        }
-        return true;
-      }())
-      #endif
-    using get_signature_t = std::remove_pointer_t<decltype(_overloaded(
-      unique_type<hash(name)>{}))>;
-  };
-
-
-  template<auto r>
+  template<auto r, class Exposed>
   constexpr auto compilation_result_to_const() {
-    // --- BYTES ---
-    constexpr static auto bytes = to_array<[] { return r().bytes; }>();
-
-    // --- FUNCTIONS ---
-    constexpr static auto function_count = []() constexpr {
-      return r().functions.size();
-    }();
-    constexpr static auto max_params_n = []() constexpr {
-      std::size_t n{};
-      for (auto &&f: r().functions) {
-        n = std::max(n, f.second.params.size());
+    constexpr static auto sizes = []() constexpr {
+      auto result = r();
+      std::size_t max_params{};
+      for (auto &&f: result.functions) {
+        max_params = std::max(max_params, f.second.param_types.size());
       }
-      return n;
+      return std::array<std::size_t, 3>{result.bytes.size(), result.functions.size(), max_params};
     }();
+    constexpr static std::size_t byte_count = sizes[0];
+    constexpr static std::size_t function_count = sizes[1];
+    constexpr static std::size_t max_params_n = sizes[2];
+
+    constexpr static auto bytes = []() constexpr {
+      auto result = r();
+      std::array<std::byte, byte_count> out{};
+      std::ranges::copy(result.bytes, out.begin());
+      return out;
+    }();
+
     constexpr static auto functions = []() constexpr {
-      std::array<std::pair<std::string_view, const_function_info<max_params_n>>, function_count> functions_data{};
+      auto result = r();
+      const_function_table<function_count, max_params_n> table{};
       std::size_t i{};
-      for (auto &&[key, value]: r().functions) {
-        functions_data[i++] = (std::make_pair(key, function_info_to_const<max_params_n>(value)));
+      for (auto &&entry: result.functions) {
+        table.items[i++] = function_info_to_const<max_params_n>(entry.second);
       }
-      return frozen::make_unordered_map(functions_data);
-    };
+      return table;
+    }();
 
-    // Function mapper
-    using sign_mapper = signature_mapper<[](std::size_t i) {
-      return (functions().begin() + i)->second;
-    }, std::make_index_sequence<function_count>>;
-
-    return const_compilation_result<bytes.size(), function_count, max_params_n, sign_mapper>{
+    return const_compilation_result<byte_count, function_count, max_params_n, [] { return functions; }, Exposed>{
       bytes,
-      functions()
+      functions
     };
   }
 }

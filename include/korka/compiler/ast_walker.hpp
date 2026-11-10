@@ -53,13 +53,22 @@ struct std::formatter<korka::ast_walker> {
         out = std::format_to(out, "Var '{}'", v.name);
       },
       [&](const nodes::expr_unary& v) {
-        out = std::format_to(out, "Unary '{}'", v.op);
+        out = std::format_to(out, "Unary '{}'", nodes::op_text(v.op));
         fmt_child("child", v.child);
       },
       [&](const nodes::expr_binary& v) {
-        out = std::format_to(out, "Binary '{}'", v.op);
+        out = std::format_to(out, "Binary '{}'", nodes::op_text(v.op));
         fmt_child("L", v.left);
         fmt_child("R", v.right);
+      },
+      [&](const nodes::expr_assign& v) {
+        out = std::format_to(out, "Assign");
+        fmt_child("target", v.target);
+        fmt_child("value", v.value);
+      },
+      [&](const nodes::expr_member& v) {
+        out = std::format_to(out, "Member '.{}'", v.field_name);
+        fmt_child("object", v.object);
       },
       [&](const nodes::expr_call& v) {
         out = std::format_to(out, "Call '{}'", v.name);
@@ -99,6 +108,10 @@ struct std::formatter<korka::ast_walker> {
         if (v.init_expr != nodes::empty_node) {
           fmt_child("init", v.init_expr);
         }
+      },
+      [&](const nodes::decl_struct& v) {
+        out = std::format_to(out, "Struct '{}'", v.name);
+        fmt_child("fields", v.fields_head);
       },
       [&](const nodes::decl_function& v) {
         out = std::format_to(out, "Function '{} {}'", v.ret_type, v.name);

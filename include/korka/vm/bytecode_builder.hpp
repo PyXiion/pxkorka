@@ -1,142 +1,171 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <limits>
+#include <vector>
+#include "korka/shared/error.hpp"
 #include "korka/utils/byte_writer.hpp"
-#include "korka/utils/utils.hpp"
-#include "korka/shared/types.hpp"
 #include "op_codes.hpp"
-#include "options.hpp"
-#include <cstdlib>
-#include <optional>
 
 namespace korka::vm {
   class bytecode_builder {
   public:
     struct label {
-      int id;
+      std::size_t id;
     };
 
-  public:
-    constexpr auto new_reg() -> reg_id_t {
-      return m_next_reg++;
-    }
-
     constexpr auto make_label() -> label {
-      return {next_label++};
+      m_label_pos.push_back(unbound);
+      return {m_label_pos.size() - 1};
     }
 
     /**
      * Saves the label on the next byte
      */
-    constexpr auto bind_label(const label &l) -> auto {
-      m_label_pos.emplace_back(l, m_data.data().size());
+    constexpr auto bind_label(const label &l) -> void {
+      m_label_pos[l.id] = m_data.size();
     }
 
-    constexpr auto resolve_label(const label &label_) -> std::optional<int> {
-      for (auto &&[l, i]: m_label_pos) {
-        if (l.id == label_.id)
-          return i;
-      }
-      return std::nullopt;
+    /**
+     * Position of a bound label, `unbound` otherwise.
+     */
+    constexpr auto label_position(const label &l) const -> std::size_t {
+      return m_label_pos[l.id];
     }
 
-    // ops
+    constexpr auto position() const -> std::size_t {
+      return m_data.size();
+    }
 
+    // --- ops ---
     constexpr auto emit_op(op_code code) -> std::size_t {
-      return m_last_op_pos = m_data.write<op_code_size>(static_cast<int>(code));
+      return m_data.write(static_cast<std::uint8_t>(code));
     }
 
-    constexpr auto emit_load_local(local_index_t index) {
+    constexpr auto emit_load_local(slot_t slot) -> void {
       emit_op(op_code::lload);
-      m_data.write_many(index);
+      m_data.write(slot);
     }
 
-    constexpr auto emit_save_local(local_index_t index) {
+    constexpr auto emit_save_local(slot_t slot) -> void {
       emit_op(op_code::lsave);
-      m_data.write_many(index);
+      m_data.write(slot);
     }
 
-    template<korka::type Type>
-    constexpr auto emit_const(const type_to_cpp_t<Type> &value) {
-      emit_op(get_const_op_by_type<Type>());
-      m_data.write_many(value);
+    constexpr auto emit_load_locals(slot_t slot, slot_t count) -> void {
+      emit_op(op_code::lloadn);
+      m_data.write(slot);
+      m_data.write(count);
+    }
+
+    constexpr auto emit_save_locals(slot_t slot, slot_t count) -> void {
+      emit_op(op_code::lsaven);
+      m_data.write(slot);
+      m_data.write(count);
+    }
+
+    constexpr auto emit_drop(slot_t count) -> void {
+      emit_op(op_code::drop);
+      m_data.write(count);
+    }
+
+    constexpr auto emit_pick(slot_t total, slot_t offset, slot_t count) -> void {
+      emit_op(op_code::pick);
+      m_data.write(total);
+      m_data.write(offset);
+      m_data.write(count);
+    }
+
+    constexpr auto emit_i64_const(std::int64_t value) -> void {
+      emit_op(op_code::i64_const);
+      m_data.write(value);
     }
 
     // --- JUMPS ---
-    constexpr auto emit_jmp(const label &target) {
-      record_jump(op_code::jmp, target);
-    }
-    constexpr auto emit_jmp_if_zero(const label &target) {
-      record_jump(op_code::jmpz, target);
-    }
-    constexpr auto emit_call(const address_t &address) {
-      emit_op(op_code::call);
-      m_data.write_many(address);
+    constexpr auto emit_jmp(const label &target) -> void {
+      record_patch(op_code::jmp, target, patch_kind::jump);
     }
 
-    constexpr auto emit_trap(vm_external_function_id function_id) {
+    constexpr auto emit_jmp_if_zero(const label &target) -> void {
+      record_patch(op_code::jmpz, target, patch_kind::jump);
+    }
+
+    constexpr auto emit_jmp_if_not_zero(const label &target) -> void {
+      record_patch(op_code::jmpnz, target, patch_kind::jump);
+    }
+
+    // --- FUNCTIONS ---
+    /**
+     * Emits `enter` with a zero slot count, returns the position to give to `patch_enter`.
+     */
+    constexpr auto emit_enter() -> std::size_t {
+      emit_op(op_code::enter);
+      return m_data.write(slot_t{});
+    }
+
+    constexpr auto patch_enter(std::size_t operand_pos, slot_t local_slots) -> void {
+      m_data.patch(operand_pos, local_slots);
+    }
+
+    constexpr auto emit_call(const label &function, slot_t arg_slots) -> void {
+      record_patch(op_code::call, function, patch_kind::address);
+      m_data.write(arg_slots);
+    }
+
+    constexpr auto emit_ret(slot_t ret_slots) -> void {
+      emit_op(op_code::ret);
+      m_data.write(ret_slots);
+    }
+
+    constexpr auto emit_trap(external_function_id function_id) -> void {
       emit_op(op_code::trap);
-      m_data.write_many(function_id);
+      m_data.write(function_id);
     }
-//
-//    constexpr auto emit_jmp_if(const label &target, reg_id_t cond) {
-//      record_jump(op_code::jmp_if, target, cond);
-//    }
 
-    constexpr auto build() -> std::vector<std::byte> {
-      auto data = m_data.data();
-      for (auto &&j: m_jumps) {
-        auto label_pos = resolve_label(j.target);
-        if (not label_pos) {
-          std::abort();
+    /**
+     * Resolves jumps and calls. Fails if one of them targets a label that was never bound.
+     */
+    constexpr auto build() -> std::expected<std::vector<std::byte>, error_t> {
+      for (const auto &p: m_patches) {
+        const auto target = m_label_pos[p.target.id];
+        if (target == unbound) {
+          return std::unexpected{error::other_compiler_error{"A jump or a call targets a label that was never bound"}};
         }
-        int target_pc = *label_pos;
-        jump_offset offset = target_pc - j.instr_index;
 
-        std::ranges::copy(
-          std::bit_cast<std::array<std::byte, sizeof(offset)>>(offset),
-          std::begin(data) + j.instr_index + op_code_size);
+        if (p.kind == patch_kind::jump) {
+          m_data.patch(p.instr_pos + op_code_size, static_cast<jump_offset>(target - p.instr_pos));
+        } else {
+          m_data.patch(p.instr_pos + op_code_size, static_cast<address_t>(target));
+        }
       }
 
-      return data;
+      return m_data.data();
     }
 
+    static constexpr std::size_t unbound = std::numeric_limits<std::size_t>::max();
+
   private:
-    struct pending_jump {
-      jump_offset instr_index;
+    static constexpr std::size_t op_code_size = 1;
+
+    enum class patch_kind { jump, address };
+
+    struct pending_patch {
+      std::size_t instr_pos;
       label target;
+      patch_kind kind;
     };
 
     byte_writer m_data;
-    reg_id_t m_next_reg{};
-    int next_label{};
-    std::size_t m_last_op_pos{};
+    std::vector<pending_patch> m_patches;
+    std::vector<std::size_t> m_label_pos;
 
-    std::vector<pending_jump> m_jumps;
-    std::vector<std::pair<label, int>> m_label_pos;
-
-    constexpr auto
-    record_jump(op_code op, const label &label_) -> void {
-      auto index = emit_op(op);
-      m_data.write_many(jump_offset{});
-      m_jumps.emplace_back(index, label_);
+    // Emits `op` and a 4-byte operand that `build()` fills in.
+    constexpr auto record_patch(op_code op, const label &target, patch_kind kind) -> void {
+      const auto pos = emit_op(op);
+      m_data.write(std::uint32_t{});
+      m_patches.push_back({pos, target, kind});
     }
   };
-
-  namespace tests {
-//    constexpr auto builder = []() constexpr {
-//      constexpr static auto get_bytes = []() constexpr {
-//        bytecode_builder b;
-//        b.emit_add(0, 1, 2);
-//        return b.build();
-//      };
-//      constexpr static auto bytes = to_array<get_bytes>();
-//      return bytes;
-//    };
-//
-//    constexpr auto bytes = builder();
-//    static_assert(bytes == std::array<std::byte, 4>{
-//      static_cast<std::byte>(op_code::add),
-//      static_cast<std::byte>(0),
-//      static_cast<std::byte>(1),
-//      static_cast<std::byte>(2)
-//    });
-  }
 }
