@@ -2,10 +2,11 @@
 
 #include <concepts>
 #include <variant>
-#include "korka/compiler/lex_token.hpp"
 #include "korka/utils/const_format.hpp"
+#include <tuple>
 #include "korka/utils/string.hpp"
-#include <optional>
+#include <string>
+#include <string_view>
 
 #if __cplusplus >= 202400L && __cpp_static_assert >= 202306L
 #define KORKA_FEATURE_FORMATTED_STATIC_ASSERT
@@ -37,7 +38,9 @@ namespace korka {
 
 
     struct parser_context {
-      std::optional<lex_token> lexeme;
+      std::string_view lexeme;
+      std::size_t line;
+      std::size_t char_pos;
     };
 
     struct other_parser_error {
@@ -46,11 +49,8 @@ namespace korka {
     };
 
     constexpr auto report(const other_parser_error &err) -> std::string {
-      if (err.ctx.lexeme) {
-        auto &l = err.ctx.lexeme;
-        return korka::format("Parser Error: ~ at ~:~ (token: ~)", err.message, l->line, l->char_pos, l->lexeme);
-      }
-      return korka::format("Parser Error: ~:~", err.message, err.ctx.lexeme->char_pos);
+      return korka::format("Parser Error: ~ at ~:~ (token: ~)", err.message, err.ctx.line, err.ctx.char_pos,
+                           err.ctx.lexeme);
     }
 
     struct redeclaration {
@@ -77,26 +77,64 @@ namespace korka {
       return korka::format("Compiler Error: symbol `~` not defined", err.identifier);
     }
 
-    struct function_return_type_mismatch {
-      std::string_view return_type;
-      std::string_view actual_type;
+    struct type_mismatch {
+      std::string_view context; // "initializer", "assignment", "argument", "return value", "condition", "operand"
+      std::string_view subject; // variable or function the value is used for; may be empty
+      std::string_view expected;
+      std::string_view actual;
     };
 
-    constexpr auto report(const function_return_type_mismatch &err) -> std::string {
-      return korka::format("Compiler Error: expected '~' type to be returned, got '~'", err.return_type,
-                           err.actual_type);
+    constexpr auto report(const type_mismatch &err) -> std::string {
+      if (err.subject.empty()) {
+        return korka::format("Compiler Error: type mismatch in ~: expected '~', got '~'",
+                             err.context, err.expected, err.actual);
+      }
+      return korka::format("Compiler Error: type mismatch in ~ of '~': expected '~', got '~'",
+                           err.context, err.subject, err.expected, err.actual);
     }
 
-    struct function_call_param_mismatch {
+    struct argument_count_mismatch {
       std::string_view function_name;
-      std::size_t param_idx;
+      std::size_t expected;
+      std::size_t actual;
     };
 
-    constexpr auto report(const function_call_param_mismatch &err) -> std::string {
-      return korka::format("Compiler Error: in function call to '~' wrong parameter at ~",
-                           err.function_name, err.param_idx);
+    constexpr auto report(const argument_count_mismatch &err) -> std::string {
+      return korka::format("Compiler Error: function '~' takes ~ argument(s), got ~",
+                           err.function_name, err.expected, err.actual);
     }
 
+    struct unknown_field {
+      std::string_view struct_name;
+      std::string_view field_name;
+    };
+
+    constexpr auto report(const unknown_field &err) -> std::string {
+      return korka::format("Compiler Error: struct '~' has no field '~'", err.struct_name, err.field_name);
+    }
+
+    struct member_on_non_struct {
+      std::string_view type_name;
+    };
+
+    constexpr auto report(const member_on_non_struct &err) -> std::string {
+      return korka::format("Compiler Error: member access on a value of non-struct type '~'", err.type_name);
+    }
+
+    struct not_assignable {
+    };
+
+    constexpr auto report(const not_assignable &) -> std::string {
+      return "Compiler Error: the left side of an assignment must be a variable or a member of a variable";
+    }
+
+    struct missing_return {
+      std::string_view function_name;
+    };
+
+    constexpr auto report(const missing_return &err) -> std::string {
+      return korka::format("Compiler Error: not every path of function '~' returns a value", err.function_name);
+    }
 
     struct other_compiler_error {
       std::string_view message;
@@ -104,23 +142,6 @@ namespace korka {
 
     constexpr auto report(const other_compiler_error &err) -> std::string {
       return korka::format("Compiler Error: ~", err.message);
-    }
-
-    struct unsupported_math_op {
-      std::string_view type;
-      std::string_view op;
-    };
-
-    constexpr auto report(const unsupported_math_op &err) -> std::string {
-      return korka::format("Error: Unsupported math operation '~' for type '~'", err.op, err.type);
-    }
-
-    struct other_error {
-      std::string_view message;
-    };
-
-    constexpr auto report(const other_error &err) -> std::string {
-      return korka::format("Error: ~", err.message);
     }
   }
 
@@ -131,10 +152,13 @@ namespace korka {
     error::redeclaration,
     error::undefined_symbol,
     error::unknown_type,
-    error::function_call_param_mismatch,
-    error::other_compiler_error,
-    error::unsupported_math_op,
-    error::other_error>;
+    error::type_mismatch,
+    error::argument_count_mismatch,
+    error::unknown_field,
+    error::member_on_non_struct,
+    error::not_assignable,
+    error::missing_return,
+    error::other_compiler_error>;
 
   constexpr auto to_string(const error_t &err) -> std::string {
     return std::visit([](const auto &e) {

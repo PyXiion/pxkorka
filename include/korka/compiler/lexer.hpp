@@ -42,9 +42,10 @@ namespace korka {
     }
 
   private:
-    static constexpr frozen::unordered_map<frozen::string, lex_kind, 10> keywords{
+    static constexpr frozen::unordered_map<frozen::string, lex_kind, 12> keywords{
       {"int",    lex_kind::kInt},
-
+      {"void",   lex_kind::kVoid},
+      {"struct", lex_kind::kStruct},
       {"return", lex_kind::kReturn},
       {"and",    lex_kind::kAnd},
       {"or",     lex_kind::kOr},
@@ -83,6 +84,10 @@ namespace korka {
           return make_token(lex_kind::kSemicolon);
         case ',':
           return make_token(lex_kind::kComma);
+        case '.':
+          return make_token(lex_kind::kDot);
+        case '!':
+          return make_token(match('=') ? lex_kind::kBangEqual : lex_kind::kBang);
         case '+':
           return make_token(match('=') ? lex_kind::kPlusEqual : lex_kind::kPlus);
         case '-':
@@ -101,10 +106,9 @@ namespace korka {
           if (match('/')) {
             // Comment until the end of line
             while (peek() != '\n' and not is_at_end()) advance();
-          } else {
-            return make_token(match('=') ? lex_kind::kSlashEqual : lex_kind::kSlash);
+            return std::nullopt;
           }
-          break;
+          return make_token(match('=') ? lex_kind::kSlashEqual : lex_kind::kSlash);
 
         case ' ':
         case '\r':
@@ -272,7 +276,7 @@ namespace korka {
   template<const_string str>
   consteval auto lex() {
     constexpr static std::string_view code {str};
-    constexpr static auto expected = [] consteval {
+    constexpr static auto expected = [] constexpr {
       return lexer{code}.lex();
     };
 
@@ -280,19 +284,19 @@ namespace korka {
       constexpr auto get = []{return expected().value(); };
       return (to_array<get>)();
     } else {
-      report_error<expected().error()>();
+      report_error<[] { return expected().error(); }>();
       return expected().error();
     }
   }
+
+  // In namespace korka, so that it is found by argument-dependent lookup
+  constexpr auto operator==(const lex_token &l, const lex_token &r) -> bool {
+    return l.kind == r.kind
+           and l.lexeme == r.lexeme
+           and l.value == r.value
+           and l.line == r.line;
+  }
 } // korka
-
-
-constexpr auto operator==(const korka::lex_token &l, const korka::lex_token &r) -> bool {
-  return l.kind == r.kind
-         and l.lexeme == r.lexeme
-         and l.value == r.value
-         and l.line == r.line;
-}
 
 template<>
 struct std::formatter<korka::lex_token> : std::formatter<std::string_view> {

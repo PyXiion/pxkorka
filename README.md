@@ -21,13 +21,26 @@ program even starts.
 | Bytecode builder | Done  |     constexpr     |
 |      Parser      | Done  |     constexpr     |
 |     Compiler     | Done  |     constexpr     |
-|    VM runner     | Done  |      runtime      |
+|    VM runner     | Done  |    **runtime**    |
 
 ### Features
 
 + **Full interop** between Korka & C++, you can bind a C++ function into the script and vice versa.
   Type safety guaranteed.
-+ **Fast VM**: in my `fib` benchmark Korka surpasses Lua and Python by 30-40%
++ **Structs**: script-side structs, and C++ structs bound by value, with C++26 reflection as an option.
+  See [Structs](#structs).
++ **Fast VM**: about 2x faster than Python on `fib` and on tight loops (not fair to compare static-typed vs dynamic-typed 
+  language, but why not), 1.6-1.8x faster than Lua on recursive
+  `fib`, but slower than Lua on tight `while` loops. See [Benchmark](#benchmark).
+
+Language: `int`, `void` and struct types, functions (calls may refer to functions defined later, recursion
+and mutual recursion work), `if`/`else`, `while`, assignment as an expression, member access,
+`+ - * / %`, comparisons, `!`, short-circuit `and`/`or`, `//` comments. The grammar is in
+[lang_grammar.md](lang_grammar.md). Types are checked at compile time: argument counts and types, initialisers,
+`return` values, conditions and operands, and every non-`void` function has to return a value on all paths.
+
+Build and test: `cmake -B build -DENABLE_TESTS=ON && cmake --build build && ctest --test-dir build`.
+The benchmark (Lua and Python) is built with `-DKORKA_BUILD_BENCH=ON`.
 
 ```cpp
 constexpr char code[] = R"(
@@ -52,13 +65,12 @@ constexpr auto bindings = korka::make_bindings(
 );
 constexpr auto compile_result = korka::compile<code, &bindings>();
 
-// Extracting function types from code
-// It returns a pointer, bc you can't return a type ._.
+// Extracting function types from code. The handle's signature_t is the C++ signature
 auto main_func = compile_result.function<"main">();
-static_assert(std::is_same_v<decltype(main_func), long (*)()>);
+static_assert(std::is_same_v<decltype(main_func)::signature_t, long()>);
 
 auto foo_func = compile_result.function<"foo">();
-static_assert(std::is_same_v<decltype(foo_func), long (*)(long, long)>);
+static_assert(std::is_same_v<decltype(foo_func)::signature_t, long(long, long)>);
 ```
 
 ### Code example
@@ -116,6 +128,76 @@ int main() {
 }
 ```
 
+### Structs
+
+Scripts can declare structs. Structs are values: they are copied on assignment, initialisation,
+argument passing and return, and nested structs are laid out inline.
+No pointers yet.
+
+```c
+struct Vec { int x; int y; };
+struct Line { Vec a; Vec b; };
+
+Vec add(Vec l, Vec r) {
+  Vec out;
+  out.x = l.x + r.x;
+  out.y = l.y + r.y;
+  return out;
+}
+
+int main() {
+  Line ln;
+  ln.a.x = 1; ln.a.y = 2;
+  ln.b = add(ln.a, ln.a);
+  return add(ln.b, ln.b).y;   // member of a temporary
+}
+```
+
+C++ structs can be bound too: specialise `korka::struct_def` for a struct whose fields are
+`std::int64_t` or other bound structs. Bound functions can take and return them by value,
+`ctx.call` can pass them to script functions, and the script can use them like its own structs.
+
+```cpp
+struct Vec { std::int64_t x; std::int64_t y; };
+
+template<>
+struct korka::struct_def<Vec> {
+  static constexpr std::string_view name = "Vec";
+  static constexpr auto fields = std::tuple{
+    korka::field{"x", &Vec::x},
+    korka::field{"y", &Vec::y},
+  };
+};
+
+auto vec_add(Vec l, Vec r) -> Vec { return {l.x + r.x, l.y + r.y}; }
+
+constexpr char code[] = R"(
+Vec twice(Vec v) { return vec_add(v, v); }
+)";
+
+// Bound structs used in the signature of a wrapped function are exposed to the script
+// automatically, korka::expose<T>() expses the other ones
+constexpr auto bindings = korka::make_bindings(korka::wrap<vec_add>("vec_add"));
+constexpr auto compile_result = korka::compile<code, &bindings>();
+
+constexpr auto twice = compile_result.function<"twice">();
+static_assert(std::is_same_v<decltype(twice)::signature_t, Vec(Vec)>);
+
+int main() {
+  korka::vm::context ctx{compile_result.bytes, bindings};
+  Vec v = ctx.call(twice, Vec{1, 2}); // {2, 4}
+}
+```
+
+A script function whose signature mentions a script-only struct cannot be exported to C++:
+asking for it with `compile_result.function<"name">()` is a compile error that names the struct.
+
+#### Reflection (C++26)
+
+With a compiler that supports C++26 reflection (`__cpp_impl_reflection`, e.g. GCC 16 with
+`-freflection`) the `korka::struct_def` specialisation is not needed for aggregates: the name and
+the fields are taken from the struct itself
+
 ## Benchmark
 
 See the [bench.cpp](https://github.com/PyXiion/pxkorka/blob/master/bench.cpp) for full code.
@@ -162,15 +244,26 @@ int fib(int n) {
 
 ### Results:
 
-|  n |  Iterations | Korka (ms) |  Lua (ms) | Python (ms) | Korka Speedup (vs. Python) |
-|---:|------------:|-----------:|----------:|------------:|:--------------------------:|
-| 10 |   2,000,000 |   6,503.03 |  9,686.56 |    8,988.40 |           1.38x            |
-| 15 |     200,000 |   7,113.14 | 10,899.20 |    9,996.17 |           1.41x            |
-| 20 |      20,000 |   8,546.09 | 11,765.60 |   10,961.60 |           1.28x            |
-| 23 |       4,500 |   7,964.48 | 11,491.50 |   10,667.10 |           1.34x            |
-| 25 |       2,000 |   8,900.08 | 12,980.40 |   12,277.30 |           1.38x            |
-| 28 |         400 |   7,506.88 | 11,101.50 |   10,820.10 |           1.44x            |
-| 30 |         200 |   9,910.64 | 14,334.40 |   13,697.50 |           1.38x            |
+Measured with GCC 16.2 `-O3`, Python 3.14, Lua 5.3.5 (`bench.cpp`; the fib cases there are commented
+out, I enabled them with these sizes).
 
-Cool graph here:
-![Execution time graph](img.png)
+Recursive `fib`:
+
+|  n |  Iterations | Korka (ms) |  Lua (ms) | Python (ms) | Korka Speedup (vs. Python) | Korka Speedup (vs. Lua) |
+|---:|------------:|-----------:|----------:|------------:|:--------------------------:|:-----------------------:|
+| 10 |   1,000,000 |   4,990.79 |  8,901.97 |   10,224.74 |           2.05x            |          1.78x          |
+| 20 |      10,000 |   6,412.88 | 11,216.60 |   12,881.44 |           2.01x            |          1.75x          |
+| 30 |         100 |   8,514.60 | 13,576.76 |   16,588.58 |           1.95x            |          1.59x          |
+
+Linear sum (`while` loop, `res = res + i`):
+
+|         n | Iterations | Korka (ms) | Lua (ms) | Python (ms) | Korka Speedup (vs. Python) | Korka Speedup (vs. Lua) |
+|----------:|-----------:|-----------:|---------:|------------:|:--------------------------:|:-----------------------:|
+|     1,000 |    300,000 |   7,556.43 | 5,107.96 |   19,129.06 |           2.53x            |          0.68x          |
+|   100,000 |      3,000 |   7,733.33 | 5,090.99 |   21,528.49 |           2.78x            |          0.66x          |
+| 1,000,000 |        300 |   7,548.00 | 5,122.03 |   22,117.53 |           2.93x            |          0.68x          |
+
+Korka is about 1.6-1.8x faster than Lua on recursive calls and about 1.5x slower on tight loops.
+
+Cool graph here: (earlier benchmark, before the VM rewrite:
+![Execution time graph](media/execution_time_graph.png)

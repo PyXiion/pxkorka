@@ -1,36 +1,34 @@
 ```
 program                 ::= { external_declaration } ;
-external_declaration    ::= function_definition | global_declaration ;
+external_declaration    ::= function_definition | struct_declaration ;
+
+struct_declaration      ::= "struct" identifier "{" field_declaration { field_declaration } "}" ";" ;
+field_declaration       ::= type_specifier identifier ";" ;
 
 function_definition     ::= type_specifier identifier "(" [ parameter_list ] ")" compound_stmt ;
-global_declaration      ::= type_specifier init_declarator_list ";" ;
 
 parameter_list          ::= param_decl { "," param_decl } ;
 param_decl              ::= type_specifier identifier ;
 
-type_specifier          ::= "int" | "char" | "void" ;
+type_specifier          ::= "int" | "void" | identifier ;
 
-statement               ::= compound_stmt 
-                          | expression_stmt 
-                          | if_stmt 
-                          | while_stmt 
+statement               ::= compound_stmt
+                          | expression_stmt
+                          | if_stmt
+                          | while_stmt
                           | return_stmt ;
 
 compound_stmt           ::= "{" { declaration_in_block | statement } "}" ;
-declaration_in_block    ::= type_specifier init_declarator_list ";" ;
+declaration_in_block    ::= type_specifier identifier [ "=" expression ] ";" ;
 
-expression_stmt         ::= [ expression ] ";" ;
+expression_stmt         ::= expression ";" | ";" ;
 if_stmt                 ::= "if" "(" expression ")" statement [ "else" statement ] ;
 while_stmt              ::= "while" "(" expression ")" statement ;
 return_stmt             ::= "return" [ expression ] ";" ;
 
-init_declarator_list    ::= init_declarator { "," init_declarator } ;
-init_declarator         ::= identifier [ "=" expression ] ;
-
 
 expression              ::= assignment ;
-assignment              ::= identifier "=" assignment 
-                          | logical_or ;
+assignment              ::= logical_or [ "=" assignment ] ;
 
 logical_or              ::= logical_and { "or" logical_and } ;
 
@@ -44,12 +42,14 @@ additive                ::= multiplicative { ("+" | "-") multiplicative } ;
 
 multiplicative          ::= unary { ("*" | "/" | "%") unary } ;
 
-unary                   ::= ("-" | "!" | "+") unary 
-                          | primary ;
+unary                   ::= ("-" | "!" | "+") unary
+                          | postfix ;
 
-primary                 ::= identifier 
-                          | number 
-                          | "(" expression ")" 
+postfix                 ::= primary { "." identifier } ;
+
+primary                 ::= identifier
+                          | number
+                          | "(" expression ")"
                           | func_call ;
 
 func_call               ::= identifier "(" [ argument_list ] ")" ;

@@ -10,19 +10,38 @@
 #include "korka/compiler/binding.hpp"
 #include "korka/vm/vm_runtime.hpp"
 
+// --- Native C++ ---
 [[gnu::noinline]]
 auto native_fib(std::int64_t n) -> std::int64_t {
   if (n == 0) return 0;
   if (n == 1) return 1;
-
   return native_fib(n - 1) + native_fib(n - 2);
 }
 
+[[gnu::noinline]]
+auto native_linear(std::int64_t n) -> std::int64_t {
+  std::int64_t res = 0;
+  for (std::int64_t i = 0; i < n; ++i) {
+    res += i;
+    asm volatile("" : "+g"(res) : : "memory");
+  }
+  return res;
+}
+
+// --- Sources ---
 const char *py_code = R"(
 def fib(n):
     if n == 0: return 0
     if n == 1: return 1
     return fib(n-1) + fib(n-2)
+
+def sum_linear(n):
+    res = 0
+    i = 0
+    while i < n:
+        res = res + i
+        i = i + 1
+    return res
 )";
 
 const char *lua_code = R"(
@@ -31,140 +50,144 @@ function fib(n)
   if n == 1 then return 1 end
   return fib(n-1) + fib(n-2)
 end
+
+function sum_linear(n)
+    local res = 0
+    local i = 0
+    while i < n do
+        res = res + i
+        i = i + 1
+    end
+    return res
+end
 )";
 
-constexpr char korka_code[] = "int fib(int n) { if (n==0) return 0; if (n==1) return 1; return fib(n-1)+fib(n-2); }";
+constexpr char korka_fib_code[] = "int fib(int n) { if (n==0) return 0; if (n==1) return 1; return fib(n-1)+fib(n-2); }";
 
-struct Result {
-  int n;
-  int iterations;
-  double korka_ms;
-  double lua_ms;
-  double python_ms;
-  double cpp_ms;
-};
+constexpr char korka_linear_code[] = R"(
+int sum_linear(int n) {
+    int res = 0;
+    int i = 0;
+    while (i < n) {
+        res = res + i;
+        i = i + 1;
+    }
+    return res;
+}
+)";
 
 void run_benchmarks() {
-  // clang-format off
-  // @formatter:off
-  const std::vector<std::pair<int, int>> test_cases = {
-    {10, 2'000'000},
-    {15,   200'000},
-    {20,    20'000},
-    {23,     4'500},
-    {25,     2'000},
-    {28,       400},
-    {30,       200}
-  };
-  // @formatter:on
-  // clang-format on
-
-  std::vector<Result> results;
-
-  std::cout << "=== Korka vs Lua vs Python vs C++ ===\n\n";
-
   std::cout << "=== Phase 1: Initialization ===\n";
 
-  auto py_start = std::chrono::high_resolution_clock::now();
+  auto py_init_s = std::chrono::high_resolution_clock::now();
   Py_Initialize();
   PyObject *py_main = PyImport_AddModule("__main__");
   PyObject *py_dict = PyModule_GetDict(py_main);
   PyRun_String(py_code, Py_file_input, py_dict, py_dict);
   PyObject *py_fib_func = PyDict_GetItemString(py_dict, "fib");
-  auto py_end = std::chrono::high_resolution_clock::now();
+  PyObject *py_sum_func = PyDict_GetItemString(py_dict, "sum_linear");
+  auto py_init_e = std::chrono::high_resolution_clock::now();
 
-  auto lua_start = std::chrono::high_resolution_clock::now();
+  auto lua_init_s = std::chrono::high_resolution_clock::now();
   lua_State *L = luaL_newstate();
   luaL_openlibs(L);
   luaL_dostring(L, lua_code);
-  auto lua_end = std::chrono::high_resolution_clock::now();
+  auto lua_init_e = std::chrono::high_resolution_clock::now();
 
-  auto korka_start = std::chrono::high_resolution_clock::now();
+  auto korka_init_s = std::chrono::high_resolution_clock::now();
   constexpr static auto bindings = korka::make_bindings();
-  constexpr auto korka_bytecode = korka::compile<korka_code, &bindings>();
-  constexpr auto korka_fib_addr = korka_bytecode.function<"fib">();
-  korka::vm::context ctx{korka_bytecode.bytes, bindings};
-  auto korka_end = std::chrono::high_resolution_clock::now();
+  constexpr auto bc_fib = korka::compile<korka_fib_code, &bindings>();
+  constexpr auto bc_linear = korka::compile<korka_linear_code, &bindings>();
+  korka::vm::context ctx_fib{bc_fib.bytes, bindings};
+  korka::vm::context ctx_linear{bc_linear.bytes, bindings};
+  auto addr_fib = bc_fib.function<"fib">();
+  auto addr_linear = bc_linear.function<"sum_linear">();
+  auto korka_init_e = std::chrono::high_resolution_clock::now();
 
-  auto t_py = std::chrono::duration<double, std::micro>(py_end - py_start).count();
-  auto t_lua = std::chrono::duration<double, std::micro>(lua_end - lua_start).count();
-  auto t_korka = std::chrono::duration<double, std::micro>(korka_end - korka_start).count();
+  printf("Python Init: %8.1f us\n", std::chrono::duration<double, std::micro>(py_init_e - py_init_s).count());
+  printf("Lua Init:    %8.1f us\n", std::chrono::duration<double, std::micro>(lua_init_e - lua_init_s).count());
+  printf("Korka Init:  %8.1f us\n\n", std::chrono::duration<double, std::micro>(korka_init_e - korka_init_s).count());
 
-  printf("Python Init: %8.1f µs\n", t_py);
-  printf("Lua Init:    %8.1f µs\n", t_lua);
-  printf("Korka Init:  %8.1f µs\n\n", t_korka);
+  // --- PHASE 2: FIB ---
+  std::cout << "=== Phase 2: Recursive Fibonacci ===\n";
+  std::vector<std::pair<int, int>> fib_cases = {/*{10, 1'000'000},
+                                                {20, 10'000},
+                                                {30, 100}*/};
+  printf("%6s %10s %12s %12s %12s %12s %10s\n", "n", "iters", "Korka ms", "Lua ms", "Py ms", "C++ ms", "Speedup");
 
-  std::cout << "=== Phase 2: Execution (different fib depths) ===\n\n";
-  std::cout << std::setw(6) << "n"
-            << std::setw(12) << "iters"
-            << std::setw(12) << "Korka ms"
-            << std::setw(12) << "Lua ms"
-            << std::setw(12) << "Python ms"
-            << std::setw(12) << "C++ ms"
-            << std::setw(14) << "Speedup" << "\n";
-  std::cout << std::string(72, '-') << "\n";
+  for (auto &[n, iters]: fib_cases) {
+    auto k_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) volatile auto r = ctx_fib.call(addr_fib, (int64_t) n);
+    auto k_e = std::chrono::high_resolution_clock::now();
 
-  for (const auto &[n, iterations]: test_cases) {
-    Result r{.n = n, .iterations = iterations};
-
-    // Korka
-    auto k_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < iterations; ++i) {
-      volatile auto res = ctx.call(korka_fib_addr, static_cast<int64_t>(n));
-    }
-    auto k_end = std::chrono::high_resolution_clock::now();
-    r.korka_ms = std::chrono::duration<double, std::milli>(k_end - k_start).count();
-
-    // Lua
-    auto l_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < iterations; ++i) {
+    auto l_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) {
       lua_getglobal(L, "fib");
       lua_pushinteger(L, n);
       lua_pcall(L, 1, 1, 0);
       lua_pop(L, 1);
     }
-    auto l_end = std::chrono::high_resolution_clock::now();
-    r.lua_ms = std::chrono::duration<double, std::milli>(l_end - l_start).count();
+    auto l_e = std::chrono::high_resolution_clock::now();
 
-    // Python
-    auto p_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < iterations; ++i) {
+    auto p_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) {
       PyObject *args = PyTuple_Pack(1, PyLong_FromLong(n));
-      PyObject *result = PyObject_CallObject(py_fib_func, args);
+      Py_DECREF(PyObject_CallObject(py_fib_func, args));
       Py_DECREF(args);
-      Py_DECREF(result);
     }
-    auto p_end = std::chrono::high_resolution_clock::now();
-    r.python_ms = std::chrono::duration<double, std::milli>(p_end - p_start).count();
+    auto p_e = std::chrono::high_resolution_clock::now();
 
-    // C++
-    auto cpp_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < iterations; ++i) {
-      volatile auto a = native_fib(n);
-      (void) a;
-    }
-    auto cpp_end = std::chrono::high_resolution_clock::now();
-    r.cpp_ms = std::chrono::duration<double, std::milli>(cpp_end - cpp_start).count();
+    auto c_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) volatile auto r = native_fib(n);
+    auto c_e = std::chrono::high_resolution_clock::now();
 
-    results.push_back(r);
-
-    double speedup = r.python_ms / r.korka_ms;
-
-    printf("%6d %11d %11.2f %11.2f %11.2f %11.2f %12.2fx\n",
-           n, iterations, r.korka_ms, r.lua_ms, r.python_ms, r.cpp_ms, speedup);
+    double km = std::chrono::duration<double, std::milli>(k_e - k_s).count();
+    double lm = std::chrono::duration<double, std::milli>(l_e - l_s).count();
+    double pm = std::chrono::duration<double, std::milli>(p_e - p_s).count();
+    double cm = std::chrono::duration<double, std::milli>(c_e - c_s).count();
+    printf("%6d %10d %12.2f %12.2f %12.2f %12.2f %9.1fx\n", n, iters, km, lm, pm, cm, pm / km);
   }
 
-  std::ofstream csv("fib_benchmark.csv");
-  csv << "n,iterations,korka_ms,lua_ms,python_ms,korka_speedup_vs_python\n";
-  for (const auto &r: results) {
-    double speedup = r.python_ms / r.korka_ms;
-    csv << r.n << "," << r.iterations << ","
-        << r.korka_ms << "," << r.lua_ms << "," << r.python_ms << ","
-        << speedup << "\n";
-  }
-  csv.close();
+  // --- PHASE 3: LINEAR SUM ---
+  std::cout << "\n=== Phase 3: Linear Sum (While Loop) ===\n";
+  std::vector<std::pair<int, int>> linear_cases = {{1000,      300'000},
+                                                   {100'000,   3000},
+                                                   {1'000'000, 300}};
+  printf("%6s %10s %12s %12s %12s %12s %10s\n", "n", "iters", "Korka ms", "Lua ms", "Py ms", "C++ ms", "Speedup");
 
-  std::cout << "=== DONE ===";
+  for (auto &[n, iters]: linear_cases) {
+    auto k_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) volatile auto r = ctx_linear.call(addr_linear, (int64_t) n);
+    auto k_e = std::chrono::high_resolution_clock::now();
+
+    auto l_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) {
+      lua_getglobal(L, "sum_linear");
+      lua_pushinteger(L, n);
+      lua_pcall(L, 1, 1, 0);
+      lua_pop(L, 1);
+    }
+    auto l_e = std::chrono::high_resolution_clock::now();
+
+    auto p_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) {
+      PyObject *args = PyTuple_Pack(1, PyLong_FromLong(n));
+      Py_DECREF(PyObject_CallObject(py_sum_func, args));
+      Py_DECREF(args);
+    }
+    auto p_e = std::chrono::high_resolution_clock::now();
+
+    auto c_s = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < iters; ++i) volatile auto r = native_linear(n);
+    auto c_e = std::chrono::high_resolution_clock::now();
+
+    double km = std::chrono::duration<double, std::milli>(k_e - k_s).count();
+    double lm = std::chrono::duration<double, std::milli>(l_e - l_s).count();
+    double pm = std::chrono::duration<double, std::milli>(p_e - p_s).count();
+    double cm = std::chrono::duration<double, std::milli>(c_e - c_s).count();
+    printf("%6d %10d %12.2f %12.2f %12.2f %12.2f %9.1fx\n", n, iters, km, lm, pm, cm, pm / km);
+  }
+
   Py_Finalize();
   lua_close(L);
 }

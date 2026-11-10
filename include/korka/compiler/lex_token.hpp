@@ -11,6 +11,7 @@ namespace korka {
     kCloseParenthesis,  // )
     kSemicolon,         // ;
     kComma,             // ,
+    kDot,               // .
 
     kBang,    kBangEqual,     // !, !=
     kEqual,   kEqualEqual,    // =, ==
@@ -25,6 +26,8 @@ namespace korka {
 
 
     kInt,               // int
+    kVoid,              // void
+    kStruct,            // struct
 
     kReturn,            // return
     kAnd, kOr,          // and, or
